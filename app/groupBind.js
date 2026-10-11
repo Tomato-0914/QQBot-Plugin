@@ -27,7 +27,11 @@ async function handleGroupBindMessage (data) {
     // isMaster：参照 Yunzai loader.js (与 this.e.isMaster 等效)
     const isMaster = !!(data.user_id && cfg.master[data.self_id]?.includes(String(data.user_id)))
 
-    const text = String(data.raw_message || "").trim()
+    const text = data.message
+      ?.filter(item => item.type === "text")
+      .map(item => item.text || "")
+      .join("")
+      .trim() || String(data.raw_message || "").trim()
 
     // --- #群绑定<群号>：绑定当前群 ---
     const match = text.match(/^(?:#群绑定)\s*(\d{5,15})\s*$/)
