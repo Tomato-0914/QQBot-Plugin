@@ -55,68 +55,40 @@ function createService (responses) {
   }
 }
 
-const duplicatedThenSuccess = createService([
-  openApiError(40054005, "msg_seq 1 duplicated"),
-  openApiError(40054005, "msg_seq 2 duplicated"),
-  { id: "sent-after-sequence-retry" },
-])
-await duplicatedThenSuccess.service.sendGroupMessage("group", "retry duplicated", { id: "duplicate-1" })
-assert.deepEqual(duplicatedThenSuccess.payloads.map(payload => payload.msg_seq), [1, 2, 3])
-
-const allDuplicated = createService(Array.from(
-  { length: 5 },
-  (_, index) => openApiError(40054005, `msg_seq ${index + 1} duplicated`),
-))
+const duplicateError = openApiError(40054005, "msg_seq 1 duplicated")
+const duplicated = createService([duplicateError, { id: "caller-retry" }])
 await assert.rejects(
-  allDuplicated.service.sendGroupMessage("group", "all duplicated", { id: "duplicate-all" }),
-  error => error.code === 40054005,
+  duplicated.service.sendGroupMessage("group", "duplicated", { id: "duplicate-1" }),
+  error => error === duplicateError,
 )
-assert.deepEqual(allDuplicated.payloads.map(payload => payload.msg_seq), [1, 2, 3, 4, 5])
+assert.deepEqual(duplicated.payloads.map(payload => payload.msg_seq), [1])
+await duplicated.service.sendGroupMessage("group", "caller retry", { id: "duplicate-1" })
+assert.deepEqual(duplicated.payloads.map(payload => payload.msg_seq), [1, 1])
 
-const expiredReply = createService([
-  openApiError(40034005, "reply msg_id expired"),
-  { id: "sent-as-active" },
-])
-await expiredReply.service.sendGroupMessage("group", "expired reply", { id: "expired-message" })
+const expiredError = openApiError(40034005, "reply msg_id expired")
+const expiredReply = createService([expiredError])
+await assert.rejects(
+  expiredReply.service.sendGroupMessage("group", "expired reply", { id: "expired-message" }),
+  error => error === expiredError,
+)
+assert.equal(expiredReply.payloads.length, 1)
 assert.equal(expiredReply.payloads[0].msg_id, "expired-message")
 assert.equal(expiredReply.payloads[0].msg_seq, 1)
-assert.equal("msg_id" in expiredReply.payloads[1], false)
-assert.equal("msg_seq" in expiredReply.payloads[1], false)
 
-const quotedFallback = createService([
+for (const failure of [
   new Error("passive quote failed"),
-  { id: "sent-as-active-quote" },
-])
-await quotedFallback.service.sendGroupMessage("group", [
-  segment.reply("quoted-message", true, "quoted-index"),
-  "quoted reply",
-])
-assert.equal(quotedFallback.payloads[0].msg_id, "quoted-message")
-assert.deepEqual(quotedFallback.payloads[0].message_reference, { message_id: "quoted-index" })
-assert.equal("msg_id" in quotedFallback.payloads[1], false)
-assert.equal("msg_seq" in quotedFallback.payloads[1], false)
-assert.deepEqual(quotedFallback.payloads[1].message_reference, { message_id: "quoted-index" })
-
-const quotedDuplicatesFallback = createService([
-  ...Array.from(
-    { length: 5 },
-    (_, index) => openApiError(40054005, `quoted msg_seq ${index + 1} duplicated`),
-  ),
-  { id: "sent-as-active-after-duplicates" },
-])
-await quotedDuplicatesFallback.service.sendGroupMessage("group", [
-  segment.reply("quoted-duplicate", true, "quoted-duplicate-index"),
-  "quoted duplicate reply",
-])
-assert.deepEqual(
-  quotedDuplicatesFallback.payloads.slice(0, 5).map(payload => payload.msg_seq),
-  [1, 2, 3, 4, 5],
-)
-assert.equal("msg_id" in quotedDuplicatesFallback.payloads[5], false)
-assert.deepEqual(
-  quotedDuplicatesFallback.payloads[5].message_reference,
-  { message_id: "quoted-duplicate-index" },
-)
+  openApiError(40054005, "quoted msg_seq duplicated"),
+]) {
+  const quotedReply = createService([failure])
+  await assert.rejects(quotedReply.service.sendGroupMessage("group", [
+    segment.reply("quoted-message", true, "quoted-index"),
+    "quoted reply",
+  ]), error => error === failure)
+  assert.equal(quotedReply.payloads.length, 1)
+  assert.equal(quotedReply.payloads[0].msg_id, "quoted-message")
+  assert.equal(quotedReply.payloads[0].msg_seq, 1)
+  assert.deepEqual(quotedReply.payloads[0].message_reference, { message_id: "quoted-index" })
+}
 
 const activeReference = createService([{ id: "sent-active-reference" }])
 await activeReference.service.sendGroupMessage("group", [

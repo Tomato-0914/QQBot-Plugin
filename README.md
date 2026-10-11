@@ -81,10 +81,16 @@ token: []
 | `hideGuildRecall` | `false` | 频道撤回时是否隐藏相关提示 |
 | `imageLength` | `3` | 图片上传时压缩的最大大小 单位MB |
 | `markdownImage` | `false` | 是否将普通图片消息段自动转换为 Markdown 图片。默认使用原生图片独立发送，避免本地图片缺少可访问图床 URL 导致 Markdown 图片不可用 |
-| `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送；自动转换的 Markdown 图片收到 `304010` 后会使用缓存图片重新生成 URL，并重试一次。频道消息不受影响 |
+| `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
-| `bot.timeout` | `30000` | QQBot 请求超时时间，单位毫秒 |
+| `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
+
+普通消息发送取消单次请求超时，已有的 `messageTimeout` 配置不再使用。
+被动发送从原消息时间计算 5 分钟截止时间，请求在这期间持续等待；
+到期后取消被动请求，只尝试一次主动发送，主动发送失败后丢弃。
+提前收到明确的接口或网络失败时直接记录错误并丢弃，不重试或提前转主动。
+同一消息的 5 次被动回复上限仍保留，达到上限后直接尝试一次主动发送。
 
 ### URL 文件上传
 

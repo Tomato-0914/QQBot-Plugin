@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 
 global.Bot = {
   String: value => String(value),
+  makeLog () {},
 }
 
 const { Converter } = await import("../lib/converter.js")

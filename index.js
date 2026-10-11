@@ -69,6 +69,7 @@ const adapter = new (class QQBotAdapter {
         ? { _raw_user_id: data._raw_user_id || data.sender._raw_user_id }
         : {}),
       message_id: data.message_id,
+      message_time: data.raw?.timestamp || data.raw?.time || data._reply_received_at || Date.now(),
     })
   }
 
@@ -79,6 +80,7 @@ const adapter = new (class QQBotAdapter {
       group_id: data.group_id,
       ...(data._raw_group_id ? { _raw_group_id: data._raw_group_id } : {}),
       message_id: data.message_id,
+      message_time: data.raw?.timestamp || data.raw?.time || data._reply_received_at || Date.now(),
     })
     let gml = data.bot.gml.get(data.group_id)
     if (!gml) {
