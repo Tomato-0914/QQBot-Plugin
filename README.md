@@ -343,6 +343,21 @@ Redis／内存消息缓存。
 默认只保留最近 7 个本地自然日的记录。每个会话在当天首次写入时会检查并删除所有
 过期的日期文件；可通过 `messageRetentionDays` 调整天数，设置为 `0` 可永久保留。
 
+## SDK 生命周期与错误处理
+
+`Bot[id].login()` 和 `Bot[id].logout()` 返回 SDK 启动、停止的 Promise，调用方应使用
+`await` 或 `.catch()` 处理失败。退出直接等待 `sdk.stop()` 完成，不依赖接收器再次触发
+`close` 事件；完整停止清理能力在新版 SDK 产物同步到插件后生效。
+
+插件会在私聊、群聊、频道消息和绑定命令的异步入口捕获失败，并记录账号及错误。
+通知事件保留原有错误处理；进程级未捕获异常继续由 Yunzai 宿主管理。
+
+边界回归测试使用 mock SDK、配置和存储，不连接 QQ，也不加载真实账号数据：
+
+```sh
+node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
+```
+
 ## 已知限制
 
 

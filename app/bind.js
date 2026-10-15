@@ -349,5 +349,13 @@ async function handleBindMessage (data) {
 }
 
 // 监听 QQBot 好友消息 + 群消息（client.js → Bot.em 事件）
-Bot.on("message.private.friend", handleBindMessage)
-Bot.on("message.group.normal", handleBindMessage)
+async function onBindMessage (data) {
+  try {
+    await handleBindMessage(data)
+  } catch (err) {
+    Bot.makeLog?.("error", ["QQBot 绑定消息处理失败", err], data.self_id)
+  }
+}
+
+Bot.on("message.private.friend", onBindMessage)
+Bot.on("message.group.normal", onBindMessage)
