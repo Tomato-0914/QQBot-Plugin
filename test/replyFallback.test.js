@@ -129,6 +129,46 @@ try {
     }
   }
 
+  // Final errors use the official three fields; full errors are only logged at debug level.
+  for (const error of [
+    Object.assign(new Error('Request "/v2/groups/group-openid/messages" failed with code(40054005): 消息被去重，请检查请求msgseq'), {
+      err_code: 40054005,
+      trace_id: "dedup-trace",
+    }),
+    Object.assign(new Error("Request failed with status code 400"), {
+      response: { data: { err_code: 40054005, message: "消息被去重，请检查请求msgseq", trace_id: "dedup-trace" } },
+    }),
+  ]) {
+    const { service } = createTransport([error])
+    logs.length = 0
+    const result = await createAdapter().sendGroupMsg(createData(service), markdownImage)
+    assert.equal(result.error[0], error)
+    assert.deepEqual(logs.filter(log => log.level === "error"), [{
+      level: "error",
+      message: ["发送消息错误", {
+        err_code: 40054005,
+        message: "消息被去重，请检查请求msgseq",
+        trace_id: "dedup-trace",
+      }],
+    }])
+    assert.ok(logs.some(log => log.level === "debug" && log.message.includes(error)))
+  }
+
+  // Network failures keep their actual message without inventing an OpenAPI code or trace ID.
+  {
+    const error = Object.assign(new Error("connection reset"), { code: "ECONNRESET" })
+    const { service } = createTransport([error])
+    logs.length = 0
+    await createAdapter().sendGroupMsg(createData(service), markdownImage)
+    const errors = logs.filter(log => log.level === "error")
+    assert.equal(errors.length, 1)
+    assert.deepEqual(errors[0].message, ["发送消息错误", {
+      err_code: undefined,
+      message: "connection reset",
+      trace_id: undefined,
+    }])
+  }
+
   // Only documented unavailable passive replies get one active attempt before the local deadline.
   const fallbackCases = [
     { code: 304103, credential: "id" },
@@ -176,6 +216,10 @@ try {
     assert.deepEqual(result.message_id, [])
     assert.equal(result.error[0], error)
     const details = logs.find(log => log.level === "error" && log.message[1]?.reply_failure)?.message[1]
+    assert.equal(logs.filter(log => log.level === "error").length, 1)
+    assert.deepEqual(Object.keys(details), ["reply_failure", "active_failure"])
+    assert.deepEqual(Object.keys(details.reply_failure), ["err_code", "message", "trace_id"])
+    assert.deepEqual(Object.keys(details.active_failure), ["err_code", "message", "trace_id"])
     assert.equal(details.reply_failure.err_code, 40034027)
     assert.equal(details.reply_failure.trace_id, "passive-trace")
     assert.equal(details.active_failure.err_code, code)
