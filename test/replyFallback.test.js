@@ -4,9 +4,10 @@ import os from "node:os"
 import path from "node:path"
 import { mock } from "node:test"
 
+const logs = []
 global.Bot = {
   String: value => String(value),
-  makeLog () {},
+  makeLog (level, message) { logs.push({ level, message }) },
 }
 
 const { MessageService } = await import("../lib/modules/qq-official-bot/lib/services/message.js")
@@ -48,13 +49,13 @@ function waitForAbort ({ signal }) {
   })
 }
 
-function createAdapter (quoted = false) {
+function createAdapter (quoted = false, credential = "id") {
   const adapter = {
     sep: ":",
     config: { forceVerifyImageResource: true, messageTimeout: 30000, bot: { timeout: 30000 } },
     converter: {
       makeRawMarkdownMsg: async (data, message) => [[
-        { type: "reply", data: { id: data.message_id, ...(quoted ? { msg_idx: "REFIDX_ORIGINAL" } : {}) } },
+        { type: "reply", data: { [credential]: data.message_id, ...(quoted ? { msg_idx: "REFIDX_ORIGINAL" } : {}) } },
         ...message,
       ]],
       refreshMarkdownImages: async () => { throw new Error("Failed sends must not refresh or retry") },
@@ -107,12 +108,16 @@ try {
     assert.equal(calls.length, 1)
   }
 
-  // Early network, API, expired-ID and quoted failures are discarded immediately.
+  // Other early network, API and quoted failures are discarded immediately.
   for (const quoted of [false, true]) {
     for (const error of [
       Object.assign(new Error("connection reset"), { code: "ECONNRESET" }),
       openApiError(304010),
-      openApiError(40034005),
+      openApiError(40034024),
+      openApiError(40034025),
+      openApiError(40034006),
+      openApiError(40034100),
+      openApiError(40034105),
       openApiError(40054005),
       openApiError(50055001),
     ]) {
@@ -122,6 +127,70 @@ try {
       assert.deepEqual(result.message_id, [])
       assert.equal(result.error[0], error)
     }
+  }
+
+  // Only documented unavailable passive replies get one active attempt before the local deadline.
+  const fallbackCases = [
+    { code: 304103, credential: "id" },
+    { code: 40034005, credential: "id" },
+    { code: 40034026, credential: "event_id" },
+    { code: 40034027, credential: "event_id" },
+    { code: 40034128, credential: "event_id" },
+  ]
+  for (const { code, credential } of fallbackCases) {
+    for (const method of ["sendGroupMsg", "sendFriendMsg"]) {
+      for (const quoted of [false, true]) {
+        const { calls, service } = createTransport([openApiError(code), { id: "fallback-active" }])
+        const data = createData(service)
+        if (method === "sendFriendMsg") data.message_type = "private"
+        const now = Date.now()
+        const result = await createAdapter(quoted, credential)[method](data, markdownImage)
+        assert.equal(Date.now(), now)
+        assert.equal(calls.length, 2)
+        assert.equal(calls[0].body[credential === "id" ? "msg_id" : "event_id"], data.message_id)
+        assert.equal(calls[0].signal.aborted, false)
+        assert.equal(calls[1].url, calls[0].url)
+        assert.equal("msg_id" in calls[1].body, false)
+        assert.equal("event_id" in calls[1].body, false)
+        assert.equal("msg_seq" in calls[1].body, false)
+        assert.deepEqual(calls[1].body.markdown, calls[0].body.markdown)
+        assert.equal(calls[1].signal, undefined)
+        if (quoted) assert.deepEqual(calls[1].body.message_reference, { message_id: "REFIDX_ORIGINAL" })
+        assert.deepEqual(result.message_id, ["fallback-active"])
+        assert.deepEqual(result.error, [])
+      }
+    }
+  }
+
+  // Active fallback failures, including any whitelisted code, cannot trigger more attempts.
+  for (const code of [40034105, ...fallbackCases.map(item => item.code)]) {
+    const error = openApiError(code)
+    error.trace_id = "active-trace"
+    const passiveError = openApiError(40034027)
+    passiveError.trace_id = "passive-trace"
+    const { calls, service } = createTransport([passiveError, error])
+    logs.length = 0
+    const result = await createAdapter().sendGroupMsg(createData(service), markdownImage)
+    assert.equal(calls.length, 2)
+    assert.equal("msg_id" in calls[1].body, false)
+    assert.deepEqual(result.message_id, [])
+    assert.equal(result.error[0], error)
+    const details = logs.find(log => log.level === "error" && log.message[1]?.reply_failure)?.message[1]
+    assert.equal(details.reply_failure.err_code, 40034027)
+    assert.equal(details.reply_failure.trace_id, "passive-trace")
+    assert.equal(details.active_failure.err_code, code)
+    assert.equal(details.active_failure.trace_id, "active-trace")
+  }
+
+  // An originally active message never falls back, even for a whitelisted error.
+  for (const { code } of fallbackCases) {
+    const error = openApiError(code)
+    const { calls, service } = createTransport([error])
+    const data = createData(service)
+    delete data.message_id
+    const result = await createAdapter().sendGroupMsg(data, markdownImage)
+    assert.equal(calls.length, 1)
+    assert.equal(result.error[0], error)
   }
 
   // A waiting passive request is canceled exactly at the original five-minute deadline.
