@@ -62,7 +62,7 @@ tips:
 permission: master
 toBotUpload: true
 hideGuildRecall: false
-imageLength: 3
+imageLength: 10
 markdownImage: false
 forceVerifyImageResource: false
 messageRetentionDays: 7
@@ -77,10 +77,10 @@ token: []
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `permission` | `master` | 管理指令权限 |
-| `toBotUpload` | `true` | 是否上传到 Bot 侧处理 |
+| `toBotUpload` | `true` | 语音是否优先通过其他 Bot 上传；Markdown 图片始终使用当前 QQBot 的官方素材接口 |
 | `hideGuildRecall` | `false` | 频道撤回时是否隐藏相关提示 |
-| `imageLength` | `3` | 图片上传时压缩的最大大小 单位MB |
-| `markdownImage` | `false` | 是否将普通图片消息段自动转换为 Markdown 图片。默认使用原生图片独立发送，避免本地图片缺少可访问图床 URL 导致 Markdown 图片不可用 |
+| `imageLength` | `10` | 图片压缩阈值，单位 MiB（`1024 * 1024` 字节）；超过阈值时尝试压缩，未超过时保留原图 |
+| `markdownImage` | `false` | 是否将群聊和 C2C 私聊中的普通图片消息段上传为官方素材并转换成 Markdown 图片；默认仍以原生图片发送 |
 | `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
@@ -99,6 +99,33 @@ token: []
 同一消息的 5 次被动回复上限仍保留，达到上限后直接尝试一次主动发送。
 最终发送失败只打印一次 error 日志，错误详情使用 `err_code`、`message`、`trace_id` 三个字段。
 被动发送和主动兜底均失败时，分别放在 `reply_failure`、`active_failure` 中；完整请求与错误堆栈记录在 debug 日志。
+
+### Markdown 图片素材
+
+设置 `markdownImage: true` 后，群聊和 C2C 私聊的 `segment.image(file)` 会使用当前
+QQBot 的 `materialService.uploadImage()` 上传图片，将返回的 `qqbot-media://` 引用
+写入 Markdown，不再通过其他 Bot 或 `Bot.fileToUrl()` 获取图床地址。
+支持本地路径、Buffer、Base64 和可下载的 HTTP/HTTPS 图片 URL。
+
+默认压缩阈值为 10 MiB，小图片保留原始内容；超过阈值时沿用现有压缩逻辑。
+上传文件名、MIME 类型和宽高按压缩后的实际图片内容确定，仅支持 PNG、JPEG、GIF、WebP。
+压缩后仍超过 SDK 的 10 MiB 上限、格式不支持或上传失败时，中断本次发送并抛出错误。
+
+每次发送任务独立记录本次上传的素材，在所有消息及被动转主动发送结束后删除。
+消息转换中途失败也会回收已上传素材；删除失败只记录错误，不改变消息发送结果。
+官方发送时已转存图片副本，因此删除素材不影响已经发出的消息。
+手动写入 Markdown 的公网图片地址和已有素材引用会保持原样，不会被自动上传或删除。
+自动生成的素材引用仅供本次发送使用，聊天记录中的原始引用不能作为后续发送的可复用地址。
+
+官方默认每个机器人最多 100 张素材；临时素材在发送结束前仍占用额度，额度不足时报错，
+不会自动删除其他素材。该流程不改变频道、原生图片及私聊流式消息的发送方式。
+平台规则参见[官方素材管理文档](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/material-management.html)。
+
+素材生命周期测试不连接 QQ，也不加载真实账号配置：
+
+```sh
+node --experimental-test-module-mocks --test test/material.test.js
+```
 
 ### URL 文件上传
 

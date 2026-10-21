@@ -396,13 +396,13 @@ await e.reply([
 ])
 ```
 
-插件会尝试转换为类似：
+开启 `markdownImage` 后，插件会通过当前 QQBot 的官方素材接口上传图片，并转换为：
 
 ```md
-![图片 #宽度px #高度px](图片地址)
+![图片 #宽度px #高度px](qqbot-media://image/v1/素材引用)
 ```
 
-默认情况下，普通图片消息段会作为原生图片独立发送，避免本地图片缺少可访问图床 URL 导致 Markdown 图片不可用。
+默认情况下，普通图片消息段会作为原生图片独立发送。
 
 如果希望普通图片消息段继续自动转换为 Markdown 图片，可以在 `QQBot.yaml` 中设置：
 
@@ -410,9 +410,16 @@ await e.reply([
 markdownImage: true
 ```
 
-设置为 `true` 后，插件会将 `segment.image(file)` 转换为 Markdown 图片；保持默认 `false` 时，消息中的普通文本 / Markdown 会继续合并为 Markdown 消息，`segment.image(file)` 会作为独立原生图片消息发送。
+设置为 `true` 后，插件会将群聊和 C2C 私聊中的 `segment.image(file)` 转换为 Markdown 图片，
+支持本地路径、Buffer、Base64 和 HTTP/HTTPS 图片 URL，不依赖额外图床。
+保持默认 `false` 时，消息中的普通文本 / Markdown 会继续合并为 Markdown 消息，
+`segment.image(file)` 会作为原生图片发送。
 
-如果无法识别图片宽高，可能会显示为 `#0px #0px`，一般建议尽量使用可访问的公网图片地址。
+默认超过 10 MiB 时尝试压缩；上传按最终内容识别图片格式和宽高，只支持 PNG、JPEG、GIF、WebP。
+上传失败或图片格式无法识别时会中断发送，不回退到图床 URL。
+本次自动上传的素材会在整个发送任务结束后删除，包含失败清理和被动转主动发送。
+已发送消息中的图片不受删除影响，但自动生成的素材引用不可用于后续发送。
+手写 Markdown 中的公网图片地址和已有素材引用保持原样，不会被自动删除。
 
 ### @ 用户与 @全体
 
