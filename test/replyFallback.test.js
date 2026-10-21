@@ -118,7 +118,6 @@ try {
       openApiError(40034006),
       openApiError(40034100),
       openApiError(40034105),
-      openApiError(40054005),
       openApiError(50055001),
     ]) {
       const { calls, service } = createTransport([error])
@@ -141,7 +140,9 @@ try {
   ]) {
     const { service } = createTransport([error])
     logs.length = 0
-    const result = await createAdapter().sendGroupMsg(createData(service), markdownImage)
+    const data = createData(service)
+    delete data.message_id
+    const result = await createAdapter().sendGroupMsg(data, markdownImage)
     assert.equal(result.error[0], error)
     assert.deepEqual(logs.filter(log => log.level === "error"), [{
       level: "error",
@@ -176,30 +177,68 @@ try {
     { code: 40034026, credential: "event_id" },
     { code: 40034027, credential: "event_id" },
     { code: 40034128, credential: "event_id" },
+    { code: 40054005, credential: "id" },
   ]
   for (const { code, credential } of fallbackCases) {
     for (const method of ["sendGroupMsg", "sendFriendMsg"]) {
       for (const quoted of [false, true]) {
-        const { calls, service } = createTransport([openApiError(code), { id: "fallback-active" }])
+        const passiveAttempts = code === 40054005 ? 5 : 1
+        const { calls, service } = createTransport([
+          ...Array(passiveAttempts).fill(openApiError(code)),
+          { id: "fallback-active" },
+        ])
         const data = createData(service)
         if (method === "sendFriendMsg") data.message_type = "private"
         const now = Date.now()
         const result = await createAdapter(quoted, credential)[method](data, markdownImage)
         assert.equal(Date.now(), now)
-        assert.equal(calls.length, 2)
+        assert.equal(calls.length, passiveAttempts + 1)
+        if (code === 40054005) assert.deepEqual(calls.slice(0, 5).map(call => call.body.msg_seq), [1, 2, 3, 4, 5])
         assert.equal(calls[0].body[credential === "id" ? "msg_id" : "event_id"], data.message_id)
         assert.equal(calls[0].signal.aborted, false)
-        assert.equal(calls[1].url, calls[0].url)
-        assert.equal("msg_id" in calls[1].body, false)
-        assert.equal("event_id" in calls[1].body, false)
-        assert.equal("msg_seq" in calls[1].body, false)
-        assert.deepEqual(calls[1].body.markdown, calls[0].body.markdown)
-        assert.equal(calls[1].signal, undefined)
-        if (quoted) assert.deepEqual(calls[1].body.message_reference, { message_id: "REFIDX_ORIGINAL" })
+        const activeCall = calls.at(-1)
+        assert.equal(activeCall.url, calls[0].url)
+        assert.equal("msg_id" in activeCall.body, false)
+        assert.equal("event_id" in activeCall.body, false)
+        assert.equal("msg_seq" in activeCall.body, false)
+        assert.deepEqual(activeCall.body.markdown, calls[0].body.markdown)
+        assert.equal(activeCall.signal, undefined)
+        if (quoted) assert.deepEqual(activeCall.body.message_reference, { message_id: "REFIDX_ORIGINAL" })
         assert.deepEqual(result.message_id, ["fallback-active"])
         assert.deepEqual(result.error, [])
       }
     }
+  }
+
+  // A successful SDK sequence retry must not trigger an active send.
+  {
+    const { calls, service } = createTransport([
+      openApiError(40054005), openApiError(40054005), { id: "passive-sequence-success" },
+    ])
+    const data = createData(service)
+    const result = await createAdapter().sendGroupMsg(data, markdownImage)
+    assert.deepEqual(calls.map(call => call.body.msg_seq), [1, 2, 3])
+    assert.ok(calls.every(call => call.body.msg_id === data.message_id))
+    assert.deepEqual(result.message_id, ["passive-sequence-success"])
+    assert.deepEqual(result.error, [])
+  }
+
+  // Exhausted sequence retries report the last passive trace and stop after one active failure.
+  {
+    const failures = Array.from({ length: 5 }, (_, index) =>
+      Object.assign(openApiError(40054005), { trace_id: `sequence-trace-${index + 1}` }))
+    const activeError = Object.assign(openApiError(40054005), { trace_id: "active-dedup-trace" })
+    const { calls, service } = createTransport([...failures, activeError])
+    logs.length = 0
+    const result = await createAdapter().sendGroupMsg(createData(service), markdownImage)
+    assert.equal(calls.length, 6)
+    assert.equal("msg_id" in calls[5].body, false)
+    assert.equal(result.error[0], activeError)
+    const errors = logs.filter(log => log.level === "error")
+    assert.equal(errors.length, 1)
+    assert.equal(errors[0].message[1].reply_failure.err_code, 40054005)
+    assert.equal(errors[0].message[1].reply_failure.trace_id, "sequence-trace-5")
+    assert.equal(errors[0].message[1].active_failure.trace_id, "active-dedup-trace")
   }
 
   // Active fallback failures, including any whitelisted code, cannot trigger more attempts.

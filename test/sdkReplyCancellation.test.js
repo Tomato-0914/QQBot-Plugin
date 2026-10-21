@@ -7,7 +7,7 @@ function error (code) {
   return Object.assign(new Error(`API code ${code}`), { code, err_code: code })
 }
 
-// All ordinary send methods propagate the first failure without opting out of fallback.
+// Ordinary sends only retry sequence conflicts; no SDK send falls back to active.
 for (const method of ["sendGroupMessage", "sendPrivateMessage", "sendGuildMessage", "sendDirectMessage"]) {
   for (const quoted of [false, true]) {
     for (const options of [undefined, { timeout: 0 }]) {
@@ -28,7 +28,9 @@ for (const method of ["sendGroupMessage", "sendPrivateMessage", "sendGuildMessag
           { type: "reply", data: { id: "original", ...(quoted ? { msg_idx: "reference" } : {}) } },
           "message",
         ], undefined, options), exception => exception === failure)
-        assert.equal(calls.length, 1)
+        assert.equal(calls.length, failure.err_code === 40054005 ? 5 : 1)
+        assert.deepEqual(calls.map(call => call.body.msg_seq), failure.err_code === 40054005 ? [1, 2, 3, 4, 5] : [1])
+        assert.ok(calls.every(call => call.body.msg_id === "original"))
         assert.equal(calls[0].options.timeout, options?.timeout ?? 10000)
         assert.equal(calls[0].body.msg_id, "original")
         assert.equal(calls[0].body.msg_seq, 1)
