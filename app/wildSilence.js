@@ -4,6 +4,7 @@
  * 白名单群里，野生号（OneBotv11 / ICQQ）不处理任何消息、不主动发言，全部交给官方机器人：
  *   - 收到的消息：accept 阶段作废野生号的回复，规则阶段直接拦截
  *   - 定时任务 / 主动推送：接管野生号的群消息发送，按配置改由官方机器人发、照发或丢弃
+ *   - 官方机器人发不了的卡片（json / xml / music）：改由同群的野生号发送
  */
 import plugin from "../../../lib/plugins/plugin.js"
 import loader from "../../../lib/plugins/loader.js"
@@ -15,6 +16,7 @@ import {
   isSilenced,
   officialId,
 } from "../lib/wildSilence.js"
+import { relaying, makeCardRelay } from "../lib/wildCardRelay.js"
 
 const CRON_NAME = { official: "改由官方机器人发", wild: "野生号照发", block: "不发" }
 
@@ -67,6 +69,8 @@ function hookAdapter() {
   }
   for (const [fn, orig] of Object.entries(adapter._wildSilenceOrig)) {
     adapter[fn] = function (data, msg) {
+      // 替官方机器人发卡片时不拦截
+      if (relaying.getStore()) return orig.call(this, data, msg)
       if (isSilenced(data.self_id, data.group_id)) return sendSilenced(orig, this, fn, data, msg)
       return orig.call(this, data, msg)
     }
@@ -86,13 +90,26 @@ loader.setLimit = function (e, config) {
   return loader._wildSilenceSetLimit.call(this, e, config)
 }
 
-// OneBotv11 适配器可能比本插件晚加载，等它出现再接管
-if (!hookAdapter()) {
-  let n = 0
-  const timer = setInterval(() => {
-    if (hookAdapter() || ++n > 120) clearInterval(timer)
-  }, 1000)
+/* ---------- 官方机器人发不了的卡片交给野生号 ---------- */
+
+function hookOfficial() {
+  const adapter = Bot.adapter?.find(a => a.id === "QQBot")
+  if (!adapter?.sendGroupMsg) return false
+  // 保存最初的发送函数，热重载时重新包一层，不会越包越多
+  adapter._wildCardOrig ??= adapter.sendGroupMsg
+  adapter.sendGroupMsg = makeCardRelay(adapter, adapter._wildCardOrig)
+  logger.mark("[野生号静默] 已接管官方机器人的卡片发送")
+  return true
 }
+
+// OneBotv11 / QQBot 适配器可能比本插件晚加载，等它出现再接管
+for (const hook of [hookAdapter, hookOfficial])
+  if (!hook()) {
+    let n = 0
+    const timer = setInterval(() => {
+      if (hook() || ++n > 120) clearInterval(timer)
+    }, 1000)
+  }
 
 /* ---------- 命令 ---------- */
 
