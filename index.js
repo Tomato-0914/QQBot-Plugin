@@ -271,4 +271,6 @@ Bot.adapter.push(adapter)
 await import("./app/bind.js")
 await import("./app/groupBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
+export { WildSilencePlugin } from "./app/wildSilence.js"
+export { AutoGroupBindPlugin } from "./app/autoGroupBind.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))
