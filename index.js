@@ -140,6 +140,8 @@ const adapter = new (class QQBotAdapter {
       getAvatarUrl: size => this.pickFriend(id, i._raw_user_id || user_id).getAvatarUrl(size),
       /** 按 Yunzai 成员对象约定禁言当前成员 */
       mute: seconds => this.pickGroup(id, group_id).muteMember(user_id, seconds),
+      /** 按 icqq 成员对象约定移出当前成员，block 为 true 时同时加入群黑名单 */
+      kick: (_message, block = false) => this.pickGroup(id, group_id).kickMember(user_id, block),
     }
   }
 
@@ -190,6 +192,25 @@ const adapter = new (class QQBotAdapter {
           member_openid: memberOpenid,
           mute_expire_at: new Date(Date.now() + duration * 1000).toISOString(),
         }])
+      },
+      /** 移出群成员，reject_add 为 true 时同时加入群黑名单禁止再次加群 */
+      kickMember: async (user_id, reject_add = false) => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const memberOpenid = await translateToOpenid(i.bot, String(user_id))
+        let result
+        try {
+          result = await i.bot.sdk.removeGroupMembers(groupOpenid, [memberOpenid], reject_add === true)
+        } catch (err) {
+          // 批量移出成员接口内邀接入，未开通的机器人统一返回 11253
+          if (err?.code === 11253 || err?.err_code === 11253)
+            throw Object.assign(new Error("移出群成员失败：该机器人未开通踢人接口（需向 QQ 开放平台申请内邀）"), {
+              code: 11253,
+            })
+          throw err
+        }
+        if (result?.remove_members_result !== "success")
+          throw new Error(`移出群成员失败：${result?.remove_members_result || "开放平台未返回成功"}`)
+        return true
       },
       /** QQBot 无拉取历史消息接口，以 message_id 作为 seq 查本地 JSONL 记录。 */
       getChatHistory: async (seq, cnt = 1) => {
