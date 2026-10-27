@@ -1914,6 +1914,22 @@ export namespace Group {
         global_rule: GlobalMuteRule;
         members: MemberMuteState[];
     }
+    /** QQ OpenAPI 群成员信息 */
+    interface MemberInfo {
+        member_openid: string;
+        username: string;
+        member_role: 'member' | 'owner' | 'admin';
+        bot: boolean;
+        /** 入群时间（RFC3339 格式） */
+        joined_at: string;
+        union_openid?: string;
+    }
+    /** 群成员列表分页响应 */
+    interface MemberList {
+        members: MemberInfo[];
+        /** 空字符串表示已到末页 */
+        next_cursor: string;
+    }
 }
 export namespace GroupMember {
     interface Info {
@@ -2580,7 +2596,7 @@ export class GuildService {
     /**
      * 删除频道角色
      */
-    deleteRole(roleId: string): Promise<boolean>;
+    deleteRole(guildId: string, roleId: string): Promise<boolean>;
     /**
      * 获取频道可访问API类别
      */
@@ -2825,7 +2841,15 @@ export class GroupService {
      */
     getRestrictChatSetting(groupOpenid: string): Promise<Group.RestrictChatSetting>;
     /**
-     * 设置群成员禁言，单次最多操作 10 个成员
+     * 分页获取群成员列表，每页最多 30 条（内邀接口）
+     */
+    getMemberList(groupOpenid: string, cursor?: string): Promise<Group.MemberList>;
+    /**
+     * 获取群成员信息（内邀接口）
+     */
+    getMemberInfo(groupOpenid: string, memberOpenid: string): Promise<Group.MemberInfo>;
+    /**
+     * 设置群成员禁言，单次最多操作 20 个成员
      */
     setMemberMuteState(groupOpenid: string, members: Group.SetMemberMuteState[]): Promise<boolean>;
 }
@@ -2948,9 +2972,10 @@ export class Bot<T extends ReceiverMode = ReceiverMode, M extends ApplicationPla
     updateGuildRole(guild_id: string, role_id: string, updateInfo: RoleUpdateParam): Promise<Guild.Role>;
     /**
      * 删除频道角色
+     * @param guild_id
      * @param role_id
      */
-    deleteGuildRole(role_id: string): Promise<boolean>;
+    deleteGuildRole(guild_id: string, role_id: string): Promise<boolean>;
     /**
      * 获取频道可访问API类别
      * @param guild_id
@@ -3051,7 +3076,13 @@ export class Bot<T extends ReceiverMode = ReceiverMode, M extends ApplicationPla
      * 获取群成员列表
      * @param group_id
      */
-    getGroupMemberList(group_id: string): Promise<void>;
+    getGroupMemberList(group_id: string): Promise<Group.MemberInfo[]>;
+    /**
+     * 获取群成员信息
+     * @param group_id 群 OpenID
+     * @param member_id 成员 OpenID
+     */
+    getGroupMemberInfo(group_id: string, member_id: string): Promise<Group.MemberInfo>;
     /**
      * 获取群基本信息
      * @param group_id 群 OpenID
@@ -3070,7 +3101,7 @@ export class Bot<T extends ReceiverMode = ReceiverMode, M extends ApplicationPla
     /**
      * 设置群成员禁言
      * @param group_id 群 OpenID
-     * @param members 群成员禁言操作列表，单次最多 10 个
+     * @param members 群成员禁言操作列表，单次最多 20 个
      */
     setGroupMemberMuteState(group_id: string, members: Group.SetMemberMuteState[]): Promise<boolean>;
     /**

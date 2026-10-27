@@ -53,6 +53,11 @@ assert.equal(
 )
 assert.deepEqual(calls[0], ["user-openid", payload, { timeout: 30000 }])
 
+// 流式分片的正文字段为 content_raw，聊天记录应保存实际内容。
+const { getRecordByMsgId } = await import("../lib/messageStore.js")
+const record = await getRecordByMsgId("bot-id", "stream-id", { userOpenId: "user-openid" })
+assert.equal(record.raw_message, "处理中")
+
 const replyPayload = { input_state: 1, index: 0, content_raw: "回复" }
 assert.deepEqual(
   makeStreamReplyPayload(replyPayload, { message_id: "incoming-message-id" }),
