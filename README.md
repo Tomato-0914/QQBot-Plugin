@@ -422,3 +422,5 @@ node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
 | `#野生静默状态` | 查看配置 |
 
 `wild-silence.json` 里的 `wild`（野生号列表）和 `official`（官方机器人 QQ）留空时自动识别。
+
+静默群里，官方机器人要发的 json / xml / music 卡片（包括带卡片的合并转发）会改由同群的野生号发送，其余内容仍由官方机器人发送；野生号不在群或发送失败时，卡片照旧由官方机器人发送。需要先完成群绑定。
