@@ -16,13 +16,25 @@ mock.module(new URL("../../../lib/plugins/plugin.js", import.meta.url).href, {
 mock.module(new URL("../../../lib/plugins/loader.js", import.meta.url).href, {
   defaultExport: loader,
 })
+const openids = { 123456: "open-on", 222222: "open-off", 444444: "open-error" }
 mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
-  namedExports: { getGroupUin: async () => undefined, translateGroupToOpenid: async () => undefined },
+  namedExports: {
+    getGroupUin: async () => undefined,
+    translateGroupToOpenid: async (_bot, gid) => openids[gid],
+  },
 })
 
 global.Bot = {
   uin: ["official", "wild"],
-  official: { adapter: { id: "QQBot", name: "QQBot" } },
+  official: {
+    adapter: { id: "QQBot", name: "QQBot" },
+    sdk: {
+      getGroupBotState: async openid => {
+        if (openid === "open-error") throw Object.assign(new Error("failed"), { code: 11253 })
+        return { allow_proactive_msg: openid === "open-on" }
+      },
+    },
+  },
   wild: { adapter: { id: "QQ", name: "OneBotv11" } },
   adapter: [
     { id: "QQ", name: "OneBotv11", sendGroupMsg () {}, sendGroupForwardMsg () {} },
@@ -31,7 +43,7 @@ global.Bot = {
 }
 
 const { silenceConfig } = await import("../lib/wildSilence.js")
-await import("../app/wildSilence.js")
+const { WildSilencePlugin } = await import("../app/wildSilence.js")
 Object.assign(silenceConfig, { enable: true, groups: [123456], wild: [] })
 
 const groupMessage = (self_id, group_id = 123456) =>
@@ -61,4 +73,18 @@ await test("关闭总开关后野生号的消息照常处理", () => {
   loader.deal(groupMessage("wild"))
   assert.equal(dealt.length, 1)
   silenceConfig.enable = true
+})
+
+await test("状态里显示每个静默群的主动消息开关", async () => {
+  Object.assign(silenceConfig, { groups: [123456, 222222, 333333, 444444], cron: "official" })
+  const replies = []
+  const plugin = new WildSilencePlugin()
+  assert.equal(await plugin.status({ self_id: "wild", isMaster: true, reply: async msg => replies.push(msg) }), true)
+  assert.equal(replies.length, 1)
+  assert.match(replies[0], /123456 主动消息：开启/)
+  assert.match(replies[0], /222222 主动消息：关闭/)
+  assert.match(replies[0], /333333 主动消息：未绑定群/)
+  assert.match(replies[0], /444444 主动消息：查询失败（11253）/)
+  assert.match(replies[0], /需群管理在机器人资料页开启/)
+  silenceConfig.groups = [123456]
 })

@@ -122,6 +122,23 @@ for (const hook of [hookAdapter, hookOfficial])
     }, 1000)
   }
 
+/* ---------- 状态：官方机器人在静默群里能否发主动消息 ---------- */
+
+// 群里关闭“允许主动发送”后，官方机器人的主动消息一律返回 40034105，定时消息只能交给野生号或丢弃
+async function proactiveState(gid) {
+  const id = officialId()
+  const bot = id && Bot[id]
+  if (!bot?.sdk?.getGroupBotState) return "官方机器人不在线"
+  const openid = await translateGroupToOpenid(bot, gid)
+  if (!openid) return "未绑定群"
+  try {
+    const { allow_proactive_msg } = await bot.sdk.getGroupBotState(openid)
+    return allow_proactive_msg ? "开启" : "关闭"
+  } catch (err) {
+    return `查询失败（${err?.code ?? err?.message ?? err}）`
+  }
+}
+
 /* ---------- 命令 ---------- */
 
 export class WildSilencePlugin extends plugin {
@@ -193,11 +210,16 @@ export class WildSilencePlugin extends plugin {
 
   async status(e) {
     if (!this.canManage(e)) return false
-    const list = cfg.groups.length ? cfg.groups.join("\n") : "（空）"
+    const lines = []
+    for (const gid of cfg.groups) lines.push(`${gid} 主动消息：${await proactiveState(gid)}`)
+    const list = lines.length ? lines.join("\n") : "（空）"
+    const tip = lines.some(line => line.endsWith("关闭"))
+      ? "\n主动消息关闭的群，官方机器人发不了定时消息，需群管理在机器人资料页开启"
+      : ""
     await e.reply(
       `总开关：${cfg.enable ? "开启" : "关闭"}\n` +
         `官方机器人：${officialId() || "未找到"}\n` +
-        `定时消息：${CRON_NAME[cfg.cron]}\n静默群：\n${list}`,
+        `定时消息：${CRON_NAME[cfg.cron]}\n静默群：\n${list}${tip}`,
     )
     return true
   }
