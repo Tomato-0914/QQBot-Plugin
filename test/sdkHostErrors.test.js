@@ -158,6 +158,49 @@ await test("notice failures keep their existing local error handler", async () =
   resolveAppid = bot => bot.info.appid
 })
 
+await test("quick menu interactions use feature_id as message text and are acknowledged", async () => {
+  const received = []
+  const onCallback = data => received.push(data)
+  Bot.on("message.private.callback", onCallback)
+  const codes = []
+  const event = {
+    post_type: "notice",
+    notice_type: "friend",
+    sub_type: "action",
+    notice_id: "interaction-id",
+    event_id: "INTERACTION_CREATE:interaction-id",
+    operator_id: "user-openid",
+    data: { type: 12, resolved: { feature_id: "menu-feature" } },
+    reply: async code => { codes.push(code) },
+  }
+  adapter.setFriendMap = async () => {}
+  adapter.sendFriendMsg = async () => {}
+  adapter.sendFriendStreamMsg = async () => {}
+  Bot["test-bot"].sdk.emit("notice", event)
+  await nextTurn()
+  Bot.off("message.private.callback", onCallback)
+  assert.equal(received.length, 1)
+  assert.equal(received[0].raw_message, "menu-feature")
+  assert.deepEqual(received[0].message, [{ type: "text", text: "menu-feature" }])
+  assert.deepEqual(codes, [0])
+})
+
+await test("group member notices reply as active messages without event_id", async () => {
+  const { makeGroupMemberNotice } = await import("../lib/client.js")
+  const sent = []
+  adapter.sendGroupMsg = async (...args) => { sent.push(args) }
+  const data = await makeGroupMemberNotice(adapter, "test-bot", {
+    sub_type: "member.increase",
+    event_id: "GROUP_MEMBER_ADD:event-id",
+    group_id: "group-openid",
+    user_id: "member-openid",
+  })
+  await data.reply("welcome")
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0][0].group_id, "group-openid")
+  assert.equal(sent[0][1], "welcome")
+})
+
 await import("../app/bind.js")
 for (const eventName of ["message.private.friend", "message.group.normal"]) {
   const makeEvent = overrides => ({
