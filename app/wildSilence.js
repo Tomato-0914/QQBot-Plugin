@@ -139,6 +139,15 @@ async function proactiveState(gid) {
   }
 }
 
+/** 这个群里是否有未静默、会自己处理消息的野生号 */
+function wildHandles(gid) {
+  return (Bot.uin || []).map(String).some(id =>
+    isWild(id) &&
+    !isSilenced(id, gid) &&
+    (Bot[id]?.gl?.has(Number(gid)) || Bot[id]?.gl?.has(String(gid))),
+  )
+}
+
 /* ---------- 命令 ---------- */
 
 export class WildSilencePlugin extends plugin {
@@ -171,9 +180,13 @@ export class WildSilencePlugin extends plugin {
     return !!e.isGroup && isSilenced(e.self_id, e.group_id)
   }
 
-  // 管理命令只由野生号处理（它拿得到真实群号），且只有主人能用
+  // 管理命令只有主人能用，优先由野生号处理（它拿得到真实群号）。
+  // 静默群里野生号的消息在入口就被丢弃，私聊或没有野生号的群也收不到，
+  // 这些地方改由官方机器人处理；野生号正常处理的群里官方机器人不响应，避免同一条命令回两遍
   canManage(e) {
-    return isWild(e.self_id) && e.isMaster
+    if (!e.isMaster) return false
+    if (isWild(e.self_id)) return true
+    return String(e.self_id) === officialId() && !(e.isGroup && wildHandles(e.group_id))
   }
 
   async toggleGroup(e) {

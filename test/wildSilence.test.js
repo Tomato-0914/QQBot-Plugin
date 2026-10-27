@@ -35,7 +35,7 @@ global.Bot = {
       },
     },
   },
-  wild: { adapter: { id: "QQ", name: "OneBotv11" } },
+  wild: { adapter: { id: "QQ", name: "OneBotv11" }, gl: new Map([[123456, {}], [654321, {}]]) },
   adapter: [
     { id: "QQ", name: "OneBotv11", sendGroupMsg () {}, sendGroupForwardMsg () {} },
     { id: "QQBot", name: "QQBot", sendGroupMsg () {} },
@@ -87,4 +87,20 @@ await test("状态里显示每个静默群的主动消息开关", async () => {
   assert.match(replies[0], /444444 主动消息：查询失败（11253）/)
   assert.match(replies[0], /需群管理在机器人资料页开启/)
   silenceConfig.groups = [123456]
+})
+
+await test("管理命令：野生号收不到的地方由官方机器人处理，避免两边重复回复", () => {
+  Object.assign(silenceConfig, { enable: true, groups: [123456] })
+  const plugin = new WildSilencePlugin()
+  const can = e => plugin.canManage({ isMaster: true, ...e })
+  assert.equal(can({ self_id: "wild", isGroup: true, group_id: 654321 }), true)
+  // 静默群：野生号的消息在入口丢弃，官方机器人接手
+  assert.equal(can({ self_id: "official", isGroup: true, group_id: 123456 }), true)
+  // 私聊和没有野生号的群
+  assert.equal(can({ self_id: "official", isGroup: false }), true)
+  assert.equal(can({ self_id: "official", isGroup: true, group_id: 999999 }), true)
+  // 野生号正常处理的群里官方机器人不响应
+  assert.equal(can({ self_id: "official", isGroup: true, group_id: 654321 }), false)
+  // 只有主人能用
+  assert.equal(can({ self_id: "official", isGroup: false, isMaster: false }), false)
 })
