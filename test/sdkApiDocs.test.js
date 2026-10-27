@@ -148,8 +148,9 @@ function recorder (status = 204, data = {}) {
       })
       const result = await uploader.upload("/v2/groups/group", file, 2)
       assert.equal(result.file_info, "file-info")
-      assert.deepEqual(puts.map(([, size]) => size), [1000, 1000, 500])
-      assert.deepEqual(finished, [[base, 1000], [base + 1, 1000], [base + 2, 500]])
+      // 并发上传时完成顺序不固定，按分片排序后比较
+      assert.deepEqual(puts.sort().map(([, size]) => size), [1000, 1000, 500])
+      assert.deepEqual(finished.sort(([a], [b]) => a - b), [[base, 1000], [base + 1, 1000], [base + 2, 500]])
     }
   } finally {
     global.fetch = originalFetch
