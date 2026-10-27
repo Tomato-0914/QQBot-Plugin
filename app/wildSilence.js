@@ -2,7 +2,7 @@
  * 野生号静默
  *
  * 白名单群里，野生号（OneBotv11 / ICQQ）不处理任何消息、不主动发言，全部交给官方机器人：
- *   - 收到的消息：accept 阶段作废野生号的回复，规则阶段直接拦截
+ *   - 收到的消息：在 loader.deal 入口直接丢弃，不进入任何插件（accept / 规则拦截作为兜底）
  *   - 定时任务 / 主动推送：接管野生号的群消息发送，按配置改由官方机器人发、照发或丢弃
  *   - 官方机器人发不了的卡片（json / xml / music）：改由同群的野生号发送
  */
@@ -79,11 +79,22 @@ function hookAdapter() {
   return true
 }
 
-/* ---------- 冷却：静默群里野生号收到的消息不占用冷却 ---------- */
+/* ---------- 收到的消息：静默群里野生号的消息不进入任何插件 ---------- */
+
+// 只靠本插件的 accept / 规则拦截不够：其他插件的 accept 照样执行，
+// 优先级数值比本插件更小的规则也会先于拦截规则执行。它们的回复虽然被作废，
+// 但命令本身已经跑了，表现为野生号没说话、却给消息点了表情或抢先开始更新，
+// 官方机器人随后处理同一条命令时只能回“已经在更新中”。
+// 因此直接在 loader.deal 入口丢弃，也不会设置冷却挡住官方机器人随后收到的同一条命令。
+loader._wildSilenceDeal ??= loader.deal
+loader.deal = function (e) {
+  if (e?.post_type === "message" && e.message_type === "group" && isSilenced(e.self_id, e.group_id)) return
+  return loader._wildSilenceDeal.call(this, e)
+}
 
 // 群绑定后，野生号和官方机器人收到的同一条消息 group_id / user_id 完全相同。
 // 野生号通常先收到，它触发的 groupCD / singleCD 会把官方机器人随后收到的同一条命令挡掉，
-// 表现为静默群里所有命令都没人回。静默群里野生号本来就不处理消息，不该设置冷却。
+// 表现为静默群里所有命令都没人回。上面的 deal 拦截之外再保留一层，防止其他路径设置冷却。
 loader._wildSilenceSetLimit ??= loader.setLimit
 loader.setLimit = function (e, config) {
   if (e?.isGroup && isSilenced(e.self_id, e.group_id)) return
@@ -131,8 +142,8 @@ export class WildSilencePlugin extends plugin {
     })
   }
 
-  // accept 比所有插件的规则都先执行：静默群里野生号对消息的回复一律作废，
-  // 官方机器人会处理同一条消息；这样优先级更高的插件也不会让野生号插嘴
+  // 正常情况下静默群里野生号的消息已在 loader.deal 入口丢弃，到不了这里；
+  // 以下 accept / check 作为兜底：回复一律作废，规则阶段直接拦截
   accept(e) {
     if (e.isGroup && isSilenced(e.self_id, e.group_id)) e.reply = async () => false
     return false
