@@ -6,6 +6,7 @@
  *   - 定时任务 / 主动推送：接管野生号的群消息发送，按配置改由官方机器人发、照发或丢弃
  */
 import plugin from "../../../lib/plugins/plugin.js"
+import loader from "../../../lib/plugins/loader.js"
 import { translateGroupToOpenid } from "../lib/groupMap.js"
 import {
   silenceConfig as cfg,
@@ -72,6 +73,17 @@ function hookAdapter() {
   }
   logger.mark("[野生号静默] 已接管野生号的群消息发送")
   return true
+}
+
+/* ---------- 冷却：静默群里野生号收到的消息不占用冷却 ---------- */
+
+// 群绑定后，野生号和官方机器人收到的同一条消息 group_id / user_id 完全相同。
+// 野生号通常先收到，它触发的 groupCD / singleCD 会把官方机器人随后收到的同一条命令挡掉，
+// 表现为静默群里所有命令都没人回。静默群里野生号本来就不处理消息，不该设置冷却。
+loader._wildSilenceSetLimit ??= loader.setLimit
+loader.setLimit = function (e, config) {
+  if (e?.isGroup && isSilenced(e.self_id, e.group_id)) return
+  return loader._wildSilenceSetLimit.call(this, e, config)
 }
 
 // OneBotv11 适配器可能比本插件晚加载，等它出现再接管
