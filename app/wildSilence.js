@@ -53,9 +53,13 @@ async function sendSilenced(orig, self, fn, data, msg, force = false) {
     return orig.call(self, data, msg)
   }
 
+  // 引用指向野生号自己的消息 ID，官方机器人无法引用（返回 40011000 请求数据异常），去掉后作为普通消息发送
+  const parts = (Array.isArray(msg) ? msg : [msg]).filter(s => s?.type !== "reply")
+  if (!parts.length) return orig.call(self, data, msg)
+
   try {
     // 合并转发交给官方机器人时包成 node 消息，由本适配器自动拍平
-    const content = fn === "sendGroupForwardMsg" ? { type: "node", data: msg } : msg
+    const content = fn === "sendGroupForwardMsg" ? { type: "node", data: msg } : parts
     const ret = await bot.pickGroup(String(data.group_id)).sendMsg(content)
     if (ret?.error?.length && !ret.message_id?.length) throw ret.error[0]
     logger.mark(`${tag} ${kind}已改由官方机器人发送`)
