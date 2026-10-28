@@ -6,8 +6,13 @@ import { mock, test } from "node:test"
 global.logger = new Proxy({}, { get: () => () => {} })
 
 const dealt = []
+// 模拟插件处理消息：测试可通过 onDeal 在处理过程中发消息
+let onDeal
 const loader = {
-  deal (e) { dealt.push(e) },
+  deal (e) {
+    dealt.push(e)
+    return onDeal?.(e)
+  },
   setLimit () {},
 }
 mock.module(new URL("../../../lib/plugins/plugin.js", import.meta.url).href, {
@@ -24,10 +29,13 @@ mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
   },
 })
 
+const officialSent = []
+const wildSent = []
 global.Bot = {
   uin: ["official", "wild"],
   official: {
     adapter: { id: "QQBot", name: "QQBot" },
+    pickGroup: gid => ({ sendMsg: async msg => { officialSent.push([gid, msg]); return { message_id: ["o1"] } } }),
     sdk: {
       getGroupBotState: async openid => {
         if (openid === "open-error") throw Object.assign(new Error("failed"), { code: 11253 })
@@ -35,9 +43,21 @@ global.Bot = {
       },
     },
   },
-  wild: { adapter: { id: "QQ", name: "OneBotv11" }, gl: new Map([[123456, {}], [654321, {}]]) },
+  wild: {
+    adapter: { id: "QQ", name: "OneBotv11" },
+    gl: new Map([[123456, {}], [654321, {}]]),
+    pickGroup () {},
+  },
   adapter: [
-    { id: "QQ", name: "OneBotv11", sendGroupMsg () {}, sendGroupForwardMsg () {} },
+    {
+      id: "QQ",
+      name: "OneBotv11",
+      sendGroupMsg (data, msg) {
+        wildSent.push([data.group_id, msg])
+        return { message_id: ["w1"] }
+      },
+      sendGroupForwardMsg () {},
+    },
     { id: "QQBot", name: "QQBot", sendGroupMsg () {} },
   ],
 }
@@ -103,4 +123,58 @@ await test("管理命令：野生号收不到的地方由官方机器人处理�
   assert.equal(can({ self_id: "official", isGroup: true, group_id: 654321 }), false)
   // 只有主人能用
   assert.equal(can({ self_id: "official", isGroup: false, isMaster: false }), false)
+})
+
+await test("卡片消息：静默群里由野生号解析，官方机器人收到的同一张卡片跳过", () => {
+  Object.assign(silenceConfig, { enable: true, groups: [123456] })
+  dealt.length = 0
+  const card = { ...groupMessage("wild"), message: [{ type: "json", data: '{"meta":{"detail_1":{"qqdocurl":"https://b23.tv/x"}}}' }] }
+  loader.deal(card)
+  assert.deepEqual(dealt, [card])
+  assert.equal(card._wildCardParse, true)
+
+  // 静默群里其他消息仍然丢弃
+  dealt.length = 0
+  loader.deal({ ...groupMessage("wild"), message: [{ type: "text", text: "你好" }] })
+  assert.deepEqual(dealt, [])
+
+  // 官方机器人：同群有静默野生号时跳过卡片；没有野生号的群、普通消息照常处理
+  const officialCard = gid => ({ ...groupMessage("official", gid), raw: { ark_data: { fields: { title: "视频" } } } })
+  loader.deal(officialCard(123456))
+  assert.deepEqual(dealt, [])
+  const kept = [officialCard(999999), groupMessage("official")]
+  for (const e of kept) loader.deal(e)
+  assert.deepEqual(dealt, kept)
+
+  // accept / 规则拦截放行正在解析的卡片
+  const plugin = new WildSilencePlugin()
+  const e = { isGroup: true, self_id: "wild", group_id: 123456, _wildCardParse: true, reply: "原回复" }
+  plugin.accept(e)
+  assert.equal(e.reply, "原回复")
+  assert.equal(plugin.check(e), false)
+  assert.equal(plugin.check({ ...e, _wildCardParse: false }), true)
+})
+
+await test("卡片解析结果不看定时消息配置，始终先交给官方机器人发送", async () => {
+  Object.assign(silenceConfig, { enable: true, groups: [123456], cron: "block" })
+  officialSent.length = 0
+  wildSent.length = 0
+  const adapter = Bot.adapter[0]
+  onDeal = async e => {
+    await new Promise(resolve => setTimeout(resolve, 1))
+    return adapter.sendGroupMsg({ self_id: "wild", group_id: e.group_id }, "解析好的视频")
+  }
+  try {
+    await loader.deal({ ...groupMessage("wild"), message: [{ type: "xml", data: "<msg/>" }] })
+    assert.deepEqual(officialSent, [["123456", "解析好的视频"]])
+    assert.deepEqual(wildSent, [])
+
+    // 不在解析卡片时，定时消息配置为“不发”的照旧拦截
+    await adapter.sendGroupMsg({ self_id: "wild", group_id: 123456 }, "定时消息")
+    assert.equal(officialSent.length, 1)
+    assert.deepEqual(wildSent, [])
+  } finally {
+    onDeal = undefined
+    silenceConfig.cron = "official"
+  }
 })

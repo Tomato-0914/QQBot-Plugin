@@ -2,10 +2,12 @@
  * 野生号静默
  *
  * 白名单群里，野生号（OneBotv11 / ICQQ）不处理任何消息、不主动发言，全部交给官方机器人：
- *   - 收到的消息：在 loader.deal 入口直接丢弃，不进入任何插件（accept / 规则拦截作为兜底）
+ *   - 收到的消息：在 loader.deal 入口直接丢弃，不进入任何插件（accept / 规则拦截作为兜底）；
+ *     卡片消息例外，由野生号解析、官方机器人发送结果，官方机器人收到的同一张卡片跳过
  *   - 定时任务 / 主动推送：接管野生号的群消息发送，按配置改由官方机器人发、照发或丢弃
  *   - 官方机器人发不了的卡片（json / xml / music）：改由同群的野生号发送
  */
+import { AsyncLocalStorage } from "node:async_hooks"
 import plugin from "../../../lib/plugins/plugin.js"
 import loader from "../../../lib/plugins/loader.js"
 import { translateGroupToOpenid } from "../lib/groupMap.js"
@@ -16,7 +18,10 @@ import {
   isSilenced,
   officialId,
 } from "../lib/wildSilence.js"
-import { relaying, makeCardRelay } from "../lib/wildCardRelay.js"
+import { relaying, makeCardRelay, wildBotOf } from "../lib/wildCardRelay.js"
+
+/** 野生号在静默群里解析卡片期间为 true：它发出的消息不看定时消息配置，始终先交给官方机器人 */
+const cardParsing = new AsyncLocalStorage()
 
 const CRON_NAME = { official: "改由官方机器人发", wild: "野生号照发", block: "不发" }
 
@@ -26,10 +31,12 @@ const wildOnly = msg => (Array.isArray(msg) ? msg : [msg]).some(s => WILD_ONLY.h
 
 /* ---------- 接管野生号的群消息发送（定时任务、主动推送都走这里） ---------- */
 
-async function sendSilenced(orig, self, fn, data, msg) {
+// force：卡片解析结果，不看定时消息配置，始终先交给官方机器人
+async function sendSilenced(orig, self, fn, data, msg, force = false) {
   const tag = `[野生号静默] 群 ${data.group_id}`
-  if (cfg.cron === "wild") return orig.call(self, data, msg)
-  if (cfg.cron === "block") {
+  const kind = force ? "卡片解析结果" : "主动消息"
+  if (!force && cfg.cron === "wild") return orig.call(self, data, msg)
+  if (!force && cfg.cron === "block") {
     logger.mark(`${tag} 已拦截野生号的主动消息`)
     return { message_id: [], error: [] }
   }
@@ -51,7 +58,7 @@ async function sendSilenced(orig, self, fn, data, msg) {
     const content = fn === "sendGroupForwardMsg" ? { type: "node", data: msg } : msg
     const ret = await bot.pickGroup(String(data.group_id)).sendMsg(content)
     if (ret?.error?.length && !ret.message_id?.length) throw ret.error[0]
-    logger.mark(`${tag} 主动消息已改由官方机器人发送`)
+    logger.mark(`${tag} ${kind}已改由官方机器人发送`)
     return ret
   } catch (err) {
     logger.warn(`${tag} 官方机器人发送失败，改由野生号发送：${err?.message || err}`)
@@ -71,7 +78,8 @@ function hookAdapter() {
     adapter[fn] = function (data, msg) {
       // 替官方机器人发卡片时不拦截
       if (relaying.getStore()) return orig.call(this, data, msg)
-      if (isSilenced(data.self_id, data.group_id)) return sendSilenced(orig, this, fn, data, msg)
+      if (isSilenced(data.self_id, data.group_id))
+        return sendSilenced(orig, this, fn, data, msg, !!cardParsing.getStore())
       return orig.call(this, data, msg)
     }
   }
@@ -86,10 +94,31 @@ function hookAdapter() {
 // 但命令本身已经跑了，表现为野生号没说话、却给消息点了表情或抢先开始更新，
 // 官方机器人随后处理同一条命令时只能回“已经在更新中”。
 // 因此直接在 loader.deal 入口丢弃，也不会设置冷却挡住官方机器人随后收到的同一条命令。
+//
+// 卡片消息例外：QQ 下发给官方机器人的小程序卡片只有标题、来源和封面，没有跳转链接，
+// 视频解析等插件拿不到地址。静默群里的卡片改由野生号解析（它拿得到完整卡片），
+// 解析结果再交给官方机器人发送；官方机器人收到的同一张卡片跳过，避免两边重复处理。
 loader._wildSilenceDeal ??= loader.deal
 loader.deal = function (e) {
-  if (e?.post_type === "message" && e.message_type === "group" && isSilenced(e.self_id, e.group_id)) return
+  if (e?.post_type === "message" && e.message_type === "group") {
+    if (isSilenced(e.self_id, e.group_id)) {
+      if (!hasCardSegment(e)) return
+      e._wildCardParse = true
+      return cardParsing.run(true, () => loader._wildSilenceDeal.call(this, e))
+    }
+    if (isOfficialCardForWild(e)) return
+  }
   return loader._wildSilenceDeal.call(this, e)
+}
+
+/** 野生号收到的消息是否带卡片（json / xml 消息段） */
+function hasCardSegment(e) {
+  return Array.isArray(e.message) && e.message.some(i => i?.type === "json" || i?.type === "xml")
+}
+
+/** 官方机器人收到的卡片，同群有静默中的野生号会解析同一张卡片 */
+function isOfficialCardForWild(e) {
+  return String(e.self_id) === officialId() && !!e.raw?.ark_data && !!wildBotOf(e.group_id)
 }
 
 // 群绑定后，野生号和官方机器人收到的同一条消息 group_id / user_id 完全相同。
@@ -170,14 +199,15 @@ export class WildSilencePlugin extends plugin {
 
   // 正常情况下静默群里野生号的消息已在 loader.deal 入口丢弃，到不了这里；
   // 以下 accept / check 作为兜底：回复一律作废，规则阶段直接拦截
+  // 卡片消息（e._wildCardParse）放行，由野生号解析
   accept(e) {
-    if (e.isGroup && isSilenced(e.self_id, e.group_id)) e.reply = async () => false
+    if (e.isGroup && !e._wildCardParse && isSilenced(e.self_id, e.group_id)) e.reply = async () => false
     return false
   }
 
   // true = 拦截，后续插件都不处理；false = 放行
   check(e) {
-    return !!e.isGroup && isSilenced(e.self_id, e.group_id)
+    return !!e.isGroup && !e._wildCardParse && isSilenced(e.self_id, e.group_id)
   }
 
   // 管理命令只有主人能用，优先由野生号处理（它拿得到真实群号）。
