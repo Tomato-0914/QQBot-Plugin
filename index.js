@@ -298,6 +298,7 @@ const adapter = new (class QQBotAdapter {
 Bot.adapter.push(adapter)
 await import("./app/bind.js")
 await import("./app/groupBind.js")
+await import("./app/autoUserBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
 export { WildSilencePlugin } from "./app/wildSilence.js"
 export { AutoGroupBindPlugin } from "./app/autoGroupBind.js"
