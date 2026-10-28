@@ -78,15 +78,20 @@ await test("卡片和文字混发时，文字仍由官方机器人发送", async
   assert.deepEqual(officialSent, [[{ type: "reply", id: "m1" }, "文字"]])
 })
 
-await test("合并转发、文件、戳一戳都交给野生号", async () => {
+await test("合并转发、戳一戳交给野生号；文件官方机器人能发，照常由官方机器人发送", async () => {
   reset()
   const forward = { type: "node", data: [{ message: "第一条" }, { message: "第二条" }] }
   const poke = { type: "poke", qq: 10001 }
   await relay(data, forward)
   await relay(data, [file, "文件说明"])
   await relay(data, poke)
-  assert.deepEqual(wildSent.map(i => i.msg), [forward, file, poke])
-  assert.deepEqual(officialSent, [["文件说明"]])
+  assert.deepEqual(wildSent.map(i => i.msg), [forward, poke])
+  assert.deepEqual(officialSent, [[file, "文件说明"]])
+
+  // 官方机器人发文件失败时，整条交给野生号
+  reset({ official: { message_id: [], error: [new Error("文件上传失败")] } })
+  await relay(data, file)
+  assert.deepEqual(wildSent.map(i => i.msg), [[file]])
 })
 
 await test("不限静默群：野生号在群里就会辅助；没有群绑定、野生号不在群、关闭辅助时不转交", async () => {
@@ -144,11 +149,11 @@ await test("官方机器人和野生号都发送失败时，保留官方机器�
   assert.deepEqual(wildSent.map(i => i.msg), [card, ["文字"]])
 })
 
-await test("私聊：与对方是好友的野生号代发文件，整条失败时也由它发送", async () => {
+await test("私聊：与对方是好友的野生号代发卡片，整条失败时也由它发送", async () => {
   reset()
   const friend = { self_id: "official", user_id: "user-openid" }
-  await friendRelay(friend, [file, "说明"])
-  assert.deepEqual(wildSent.map(i => [i.to, i.msg]), [["friend:20001", file]])
+  await friendRelay(friend, [card, "说明"])
+  assert.deepEqual(wildSent.map(i => [i.to, i.msg]), [["friend:20001", card]])
   assert.deepEqual(officialSent, [["说明"]])
 
   reset({ official: new Error("失败") })
@@ -157,10 +162,10 @@ await test("私聊：与对方是好友的野生号代发文件，整条失败�
 
   // 不是野生号的好友、或没有绑定 QQ 号时不转交
   reset()
-  await friendRelay({ self_id: "official", user_id: "unknown-openid" }, file)
-  await friendRelay({ self_id: "official", user_id: "99999" }, file)
+  await friendRelay({ self_id: "official", user_id: "unknown-openid" }, card)
+  await friendRelay({ self_id: "official", user_id: "99999" }, card)
   assert.deepEqual(wildSent, [])
-  assert.deepEqual(officialSent, [file, file])
+  assert.deepEqual(officialSent, [card, card])
 })
 
 await test("野生号替官方机器人发送期间不再转交，避免来回转发", async () => {

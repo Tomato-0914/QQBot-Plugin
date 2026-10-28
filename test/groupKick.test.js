@@ -134,3 +134,15 @@ await test("群信息缓存过期后重新查询机器人群内身份，is_admin
   assert.equal(queries, 2)
   assert.equal(adapter.pickGroup("bot2", "123").is_admin, false)
 })
+
+await test("好友、群对象的 sendFile 以文件消息由官方机器人发送", async () => {
+  const sent = []
+  adapter.sendGroupMsg = async (data, msg) => sent.push(["group", data.group_id, msg])
+  adapter.sendFriendMsg = async (data, msg) => sent.push(["friend", data.user_id, msg])
+  await adapter.pickGroup("bot1", "123").sendFile("/tmp/a.txt", "a.txt")
+  await adapter.pickFriend("bot1", "456").sendFile("/tmp/b.txt", "b.txt")
+  assert.deepEqual(sent, [
+    ["group", "123", { type: "file", file: "/tmp/a.txt", name: "a.txt" }],
+    ["friend", "456", { type: "file", file: "/tmp/b.txt", name: "b.txt" }],
+  ])
+})

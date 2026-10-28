@@ -112,6 +112,8 @@ const adapter = new (class QQBotAdapter {
     return {
       ...i,
       sendMsg: msg => this.sendFriendMsg(i, msg),
+      /** 按 Yunzai 约定发送文件（官方机器人以文件消息发送） */
+      sendFile: (file, name) => this.sendFriendMsg(i, { type: "file", file, name }),
       /** 发送一个 C2C 流式消息分片；调用方负责维护 index 和 stream_msg_id */
       sendStreamMsg: (payload, options) => this.sendFriendStreamMsg(i, payload, options),
       getMsg: message_id => getRecordByMsgId(
@@ -167,6 +169,8 @@ const adapter = new (class QQBotAdapter {
       is_owner: memberRole === "owner",
       is_admin: memberRole === "admin" || memberRole === "owner",
       sendMsg: msg => this.sendGroupMsg(i, msg),
+      /** 按 Yunzai 约定发送群文件（官方机器人以文件消息发送） */
+      sendFile: (file, name) => this.sendGroupMsg(i, { type: "file", file, name }),
       getMsg: message_id => getRecordByMsgId(
         id,
         message_id,

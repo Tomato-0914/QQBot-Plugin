@@ -100,13 +100,13 @@ await test("群成员资料、戳一戳交给同群野生号；成员对象的 g
 await test("群方法交给野生号，成员参数的 openid 换成 QQ 号", async () => {
   reset()
   const group = officialAdapter.pickGroup("official", "official:group-openid")
-  await group.sendFile("/tmp/a.zip", "a.zip")
+  await group.getMemberList()
   await group.setCard("user-openid", "新名片")
   await group.setTitle(20001, "头衔")
   await group.pokeMember("user-openid")
   await group.muteAll(true)
   assert.deepEqual(calls, [
-    ["group:123456", "sendFile", "/tmp/a.zip", "a.zip"],
+    ["group:123456", "getMemberList"],
     ["group:123456", "setCard", 20001, "新名片"],
     ["group:123456", "setTitle", 20001, "头衔"],
     ["group:123456", "pokeMember", 20001],
@@ -127,10 +127,10 @@ await test("没有野生号、未绑定时给出明确的错误；关闭辅助�
   reset()
   wildOnline = false
   await assert.rejects(officialAdapter.pickFriend("official", "20001").thumbUp(1), /没有在线的野生号/)
-  await assert.rejects(officialAdapter.pickGroup("official", "123456").sendFile("a"), /野生号不在这个群/)
+  await assert.rejects(officialAdapter.pickGroup("official", "123456").setCard(20001, "a"), /野生号不在这个群/)
   wildOnline = true
   await assert.rejects(officialAdapter.pickFriend("official", "unknown-openid").thumbUp(1), /还没有绑定 QQ 号/)
-  await assert.rejects(officialAdapter.pickGroup("official", "unknown-openid").sendFile("a"), /还没有群绑定/)
+  await assert.rejects(officialAdapter.pickGroup("official", "unknown-openid").setCard(20001, "a"), /还没有群绑定/)
 
   silenceConfig.assist = false
   assert.equal(officialAdapter.pickFriend("official", "20001").thumbUp, undefined)

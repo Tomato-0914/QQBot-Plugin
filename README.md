@@ -453,15 +453,15 @@ node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
 
 野生号平时静默，只在官方机器人发不了、做不到的时候代办。不限静默群，野生号在群里（私聊时野生号与对方是好友）就会辅助；`wild-silence.json` 中 `assist: false` 可关闭。需要先完成群绑定和 QQ 绑定（可自动完成，见下方「自动 QQ 绑定」）。
 
-- **发不了的内容**：json / xml / music 卡片、文件、合并转发、戳一戳改由野生号发送，其余内容仍由官方机器人发送；野生号发送失败时交回官方机器人（合并转发会被拍平成普通消息）。
+- **发不了的内容**：json / xml / music 卡片、合并转发、戳一戳改由野生号发送，其余内容仍由官方机器人发送；野生号发送失败时交回官方机器人（合并转发会被拍平成普通消息）。文件官方机器人能发，由官方机器人发送（好友、群对象的 `sendFile` 同样以文件消息发送），失败时才交给野生号。
 - **整条发送失败**：官方机器人整条消息发送失败（被动回复过期、主动消息额度用完、群里关闭了主动消息等）时，改由野生号发送；按钮、引用等官方机器人专用的部分会去掉，Markdown 按文字发送。
 - **没有的功能**：插件调用官方机器人没有的方法时，交给野生号执行，结果仍由插件通过官方机器人回复。例如椰奶的好友点赞：野生号点赞，官方机器人回复点赞结果。
 
 | 对象 | 交给野生号的方法 |
 | --- | --- |
-| 好友 | `thumbUp`（点赞）、`sendFile`、`sendForwardMsg`、`getInfo` |
+| 好友 | `thumbUp`（点赞）、`sendForwardMsg`、`getInfo` |
 | 群成员 | `getInfo`（群名片、等级、入群时间等）、`poke`；好友的方法同样可用 |
-| 群 | `sendFile`（上传群文件）、`sendForwardMsg`、`getMemberList` / `getMemberArray` / `getMemberMap`、`getHonorInfo`、`getEssence`、`pokeMember`、`setCard`、`setTitle`、`setAdmin`、`setName`、`sign`、`muteAll` |
+| 群 | `sendForwardMsg`、`getMemberList` / `getMemberArray` / `getMemberMap`、`getHonorInfo`、`getEssence`、`pokeMember`、`setCard`、`setTitle`、`setAdmin`、`setName`、`sign`、`muteAll` |
 
 官方机器人自己有的方法不受影响；`getMemberMap` 例外，官方机器人只有见过的成员，优先取野生号的完整列表，野生号不可用时用回官方机器人的。改名片、设头衔、全员禁言等需要野生号本身有对应的群权限。
 
