@@ -31,6 +31,7 @@ mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
 
 const officialSent = []
 const wildSent = []
+const wildForwards = []
 global.Bot = {
   uin: ["official", "wild"],
   official: {
@@ -56,7 +57,10 @@ global.Bot = {
         wildSent.push([data.group_id, msg])
         return { message_id: ["w1"] }
       },
-      sendGroupForwardMsg () {},
+      sendGroupForwardMsg (data, msg) {
+        wildForwards.push([data.group_id, msg])
+        return { message_id: ["w2"] }
+      },
     },
     { id: "QQBot", name: "QQBot", sendGroupMsg () {} },
   ],
@@ -181,4 +185,14 @@ await test("卡片解析结果不看定时消息配置，始终先交给官方�
     onDeal = undefined
     silenceConfig.cron = "official"
   }
+})
+
+await test("静默群里野生号自己的合并转发由野生号直接发送，不再交给官方机器人拍平", async () => {
+  Object.assign(silenceConfig, { enable: true, groups: [123456], cron: "official" })
+  officialSent.length = 0
+  const adapter = Bot.adapter[0]
+  const ret = await adapter.sendGroupForwardMsg({ self_id: "wild", group_id: 123456 }, [{ message: "第一条" }])
+  assert.deepEqual(ret, { message_id: ["w2"] })
+  assert.deepEqual(wildForwards, [[123456, [{ message: "第一条" }]]])
+  assert.deepEqual(officialSent, [])
 })

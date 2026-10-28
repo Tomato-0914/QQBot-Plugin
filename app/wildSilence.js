@@ -5,7 +5,9 @@
  *   - 收到的消息：在 loader.deal 入口直接丢弃，不进入任何插件（accept / 规则拦截作为兜底）；
  *     卡片消息例外，由野生号解析、官方机器人发送结果，官方机器人收到的同一张卡片跳过
  *   - 定时任务 / 主动推送：接管野生号的群消息发送，按配置改由官方机器人发、照发或丢弃
- *   - 官方机器人发不了的卡片（json / xml / music）：改由同群的野生号发送
+ *   - 官方机器人发不了的内容（卡片、文件、合并转发、戳一戳）、整条发送失败的消息：改由野生号发送
+ *     （lib/wildCardRelay.js）；官方机器人没有的功能（点赞、发群文件、查成员资料等）交给野生号执行
+ *     （lib/wildAssist.js）。这两项不限静默群，野生号在群里就会辅助
  */
 import { AsyncLocalStorage } from "node:async_hooks"
 import plugin from "../../../lib/plugins/plugin.js"
@@ -18,15 +20,16 @@ import {
   isSilenced,
   officialId,
 } from "../lib/wildSilence.js"
-import { relaying, makeCardRelay, wildBotOf } from "../lib/wildCardRelay.js"
+import { relaying, makeWildRelay, silencedWild } from "../lib/wildCardRelay.js"
+import { installWildAssist } from "../lib/wildAssist.js"
 
 /** 野生号在静默群里解析卡片期间为 true：它发出的消息不看定时消息配置，始终先交给官方机器人 */
 const cardParsing = new AsyncLocalStorage()
 
 const CRON_NAME = { official: "改由官方机器人发", wild: "野生号照发", block: "不发" }
 
-// 官方机器人发不了的消息类型（戳一戳、json/xml 卡片等），直接交给野生号
-const WILD_ONLY = new Set(["poke", "json", "xml", "music", "file"])
+// 官方机器人发不了的消息类型（戳一戳、卡片、文件、合并转发），野生号直接发
+const WILD_ONLY = new Set(["poke", "json", "xml", "music", "file", "node"])
 const wildOnly = msg => (Array.isArray(msg) ? msg : [msg]).some(s => WILD_ONLY.has(s?.type))
 
 /* ---------- 接管野生号的群消息发送（定时任务、主动推送都走这里） ---------- */
@@ -40,7 +43,7 @@ async function sendSilenced(orig, self, fn, data, msg, force = false) {
     logger.mark(`${tag} 已拦截野生号的主动消息`)
     return { message_id: [], error: [] }
   }
-  if (wildOnly(msg)) return orig.call(self, data, msg)
+  if (fn === "sendGroupForwardMsg" || wildOnly(msg)) return orig.call(self, data, msg)
 
   const id = officialId()
   const bot = id && Bot[id]
@@ -58,9 +61,7 @@ async function sendSilenced(orig, self, fn, data, msg, force = false) {
   if (!parts.length) return orig.call(self, data, msg)
 
   try {
-    // 合并转发交给官方机器人时包成 node 消息，由本适配器自动拍平
-    const content = fn === "sendGroupForwardMsg" ? { type: "node", data: msg } : parts
-    const ret = await bot.pickGroup(String(data.group_id)).sendMsg(content)
+    const ret = await bot.pickGroup(String(data.group_id)).sendMsg(parts)
     if (ret?.error?.length && !ret.message_id?.length) throw ret.error[0]
     logger.mark(`${tag} ${kind}已改由官方机器人发送`)
     return ret
@@ -122,7 +123,7 @@ function hasCardSegment(e) {
 
 /** 官方机器人收到的卡片，同群有静默中的野生号会解析同一张卡片 */
 function isOfficialCardForWild(e) {
-  return String(e.self_id) === officialId() && !!e.raw?.ark_data && !!wildBotOf(e.group_id)
+  return String(e.self_id) === officialId() && !!e.raw?.ark_data && !!silencedWild(e.group_id)
 }
 
 // 群绑定后，野生号和官方机器人收到的同一条消息 group_id / user_id 完全相同。
@@ -134,15 +135,18 @@ loader.setLimit = function (e, config) {
   return loader._wildSilenceSetLimit.call(this, e, config)
 }
 
-/* ---------- 官方机器人发不了的卡片交给野生号 ---------- */
+/* ---------- 官方机器人发不了、做不到的交给野生号 ---------- */
 
 function hookOfficial() {
   const adapter = Bot.adapter?.find(a => a.id === "QQBot")
   if (!adapter?.sendGroupMsg) return false
   // 保存最初的发送函数，热重载时重新包一层，不会越包越多
   adapter._wildCardOrig ??= adapter.sendGroupMsg
-  adapter.sendGroupMsg = makeCardRelay(adapter, adapter._wildCardOrig)
-  logger.mark("[野生号静默] 已接管官方机器人的卡片发送")
+  adapter._wildFriendOrig ??= adapter.sendFriendMsg
+  adapter.sendGroupMsg = makeWildRelay(adapter, adapter._wildCardOrig, "group")
+  if (adapter._wildFriendOrig) adapter.sendFriendMsg = makeWildRelay(adapter, adapter._wildFriendOrig, "friend")
+  installWildAssist(adapter)
+  logger.mark("[野生号辅助] 官方机器人发不了的消息、没有的功能改由野生号代办")
   return true
 }
 
