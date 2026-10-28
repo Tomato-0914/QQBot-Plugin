@@ -103,3 +103,34 @@ await test("未开通内邀接口（11253）时给出明确提示", async () => 
   await assert.rejects(adapter.pickGroup("bot1", "123").kickMember("456"), /network down/)
   removeError = null
 })
+
+await test("群信息缓存过期后重新查询机器人群内身份，is_admin 随之更新", async () => {
+  let role = "admin"
+  let queries = 0
+  Bot.bot2 = {
+    gl: new Map([["123", { group_id: "123", group_name: "旧群名", member_role: "member" }]]),
+    sdk: {
+      getGroupInfo: async () => ({ group_openid: "group-openid-123", group_name: "测试群", group_member_num: 5 }),
+      getGroupBotState: async () => {
+        queries++
+        return { member_role: role }
+      },
+    },
+  }
+  const data = { bot: Bot.bot2, group_id: "123", _raw_group_id: "group-openid-123" }
+  // 旧缓存没有查询时间：视为过期，重新查询（机器人已被设为管理员）
+  await adapter.getGroupInfo(data, false, true)
+  assert.equal(queries, 1)
+  assert.equal(adapter.pickGroup("bot2", "123").is_admin, true)
+
+  // 有效期内直接用缓存
+  role = "member"
+  await adapter.getGroupInfo(data, false, true)
+  assert.equal(queries, 1)
+
+  // 超过有效期重新查询（取消管理员）
+  Bot.bot2.gl.get("123").info_time = Date.now() - 11 * 60 * 1000
+  await adapter.getGroupInfo(data, false, true)
+  assert.equal(queries, 2)
+  assert.equal(adapter.pickGroup("bot2", "123").is_admin, false)
+})

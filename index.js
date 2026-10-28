@@ -10,6 +10,8 @@ const {
 } = await import("./lib/groupMap.js")
 const { installMessageSender } = await import("./lib/messageSender.js")
 const { getRecordByMsgId } = await import("./lib/messageStore.js")
+/** 群信息（含机器人群内身份）缓存有效期 */
+const GROUP_INFO_TTL = 10 * 60 * 1000
 const adapter = new (class QQBotAdapter {
   constructor() {
     this.id = "QQBot"
@@ -33,11 +35,15 @@ const adapter = new (class QQBotAdapter {
     return Bot.getMap(`${this.path}${id}/Member`)
   }
 
-  /** 按 Yunzai 群对象格式获取 QQ OpenAPI 群基本信息 */
+  /**
+   * 按 Yunzai 群对象格式获取 QQ OpenAPI 群基本信息。
+   * 缓存 10 分钟后重新查询：机器人在群里被设为或取消管理员时，member_role（is_admin / is_owner）才会更新
+   */
   async getGroupInfo(data, no_cache = false, add = false) {
     const group_id = String(data.group_id)
     const cached = data.bot.gl.get(group_id)
-    if (!no_cache && cached?.group_name && cached?.member_role) return cached
+    const fresh = Date.now() - (cached?.info_time || 0) < GROUP_INFO_TTL
+    if (!no_cache && fresh && cached?.group_name && cached?.member_role) return cached
 
     let group_openid = data._raw_group_id
     if (!group_openid || group_openid === group_id)
@@ -55,6 +61,7 @@ const adapter = new (class QQBotAdapter {
       _raw_group_id: raw.group_openid || group_openid,
       member_count: raw.group_member_num,
       member_role,
+      info_time: Date.now(),
     }
     if (add || data.bot.gl.has(group_id)) await data.bot.gl.set(group_id, info)
     return info
