@@ -12,6 +12,11 @@ const { installMessageSender } = await import("./lib/messageSender.js")
 const { getRecordByMsgId } = await import("./lib/messageStore.js")
 /** 群信息（含机器人群内身份）缓存有效期 */
 const GROUP_INFO_TTL = 10 * 60 * 1000
+/**
+ * 禁言接口按到期时间点生效，请求到达时剩余时长已略少于设定值，QQ 按整分钟向下取整显示
+ * （禁言 300 秒显示为“禁言4分钟”）。到期时间多留几秒抵消请求耗时与时钟误差
+ */
+const MUTE_EXPIRE_MARGIN = 5 * 1000
 const adapter = new (class QQBotAdapter {
   constructor() {
     this.id = "QQBot"
@@ -197,7 +202,7 @@ const adapter = new (class QQBotAdapter {
         return i.bot.sdk.setGroupMemberMuteState(groupOpenid, [{
           op: muted ? "update" : "add",
           member_openid: memberOpenid,
-          mute_expire_at: new Date(Date.now() + duration * 1000).toISOString(),
+          mute_expire_at: new Date(Date.now() + duration * 1000 + MUTE_EXPIRE_MARGIN).toISOString(),
         }])
       },
       /** 移出群成员，reject_add 为 true 时同时加入群黑名单禁止再次加群 */
