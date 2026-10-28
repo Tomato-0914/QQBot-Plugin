@@ -49,6 +49,7 @@ const {
 const {
   getRecordByMsgId,
   getRecordByMsgIdx,
+  isIncomingMsg,
   isReferenceMessageIndex,
   markMsgRecordRecalled,
   parseElementMessage,
@@ -488,6 +489,10 @@ await makeMessage(adapter, "10000", {
 assert.equal(emitted.source.seq, "message-1")
 assert.equal(emitted.source.message, "hello")
 
+// 官方机器人撤回时据此跳过群友发的消息
+assert.equal(await isIncomingMsg(bot, "message-1", groupScope), true)
+assert.equal(await isIncomingMsg(bot, "outgoing-stored", groupScope), false)
+assert.equal(await isIncomingMsg(bot, "not-stored", groupScope), false)
 assert.equal(await markMsgRecordRecalled(bot, "message-1", groupScope), true)
 assert.equal(await getRecordByMsgId(bot, "message-1", groupScope), null)
 const storedAfterRecall = (await Promise.all(
