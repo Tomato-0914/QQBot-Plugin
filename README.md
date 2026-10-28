@@ -104,6 +104,11 @@ token: []
 最终发送失败只打印一次 error 日志，错误详情使用 `err_code`、`message`、`trace_id` 三个字段。
 被动发送和主动兜底均失败时，分别放在 `reply_failure`、`active_failure` 中；完整请求与错误堆栈记录在 debug 日志。
 
+### Markdown 折叠块
+
+官方 Markdown 不支持 HTML 折叠块 `<details><summary>标题</summary>内容</details>`，带有它的消息会发送失败。
+群聊和私聊发送前会把折叠块展开成普通 Markdown：标题加粗单独一行，内容照常显示；代码块、行内代码里的不处理。
+
 ### Markdown 图片素材
 
 设置 `markdownImage: true` 后，群聊和 C2C 私聊的 `segment.image(file)` 会使用当前
