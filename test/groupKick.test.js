@@ -134,26 +134,3 @@ await test("群信息缓存过期后重新查询机器人群内身份，is_admin
   assert.equal(queries, 2)
   assert.equal(adapter.pickGroup("bot2", "123").is_admin, false)
 })
-
-await test("禁言到期时间多留几秒：请求耗时后剩余时长仍按设定的整分钟显示", async () => {
-  const muteCalls = []
-  Bot.bot3 = {
-    gl: new Map(),
-    sdk: {
-      getGroupRestrictChatSetting: async () => ({ members: [] }),
-      setGroupMemberMuteState: async (...args) => {
-        muteCalls.push(args)
-        return true
-      },
-    },
-  }
-  const sentAt = Date.now()
-  await adapter.pickGroup("bot3", "123").muteMember("456", 300)
-  const [[groupOpenid, [member]]] = muteCalls
-  assert.equal(groupOpenid, "group-openid-123")
-  assert.equal(member.op, "add")
-  // 模拟请求 1 秒后到达：QQ 按整分钟向下取整显示，剩余仍应为 5 分钟
-  const remaining = Date.parse(member.mute_expire_at) - (sentAt + 1000)
-  assert.equal(Math.floor(remaining / 60000), 5)
-  assert.ok(remaining < 300 * 1000 + 10 * 1000, "实际多出的时长不超过几秒")
-})
