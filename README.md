@@ -66,6 +66,7 @@ imageLength: 10
 markdownImage: false
 forceVerifyImageResource: false
 messageRetentionDays: 7
+autoBindUser: true
 bot:
   maxRetry: 10
   timeout: 30000
@@ -83,6 +84,7 @@ token: []
 | `markdownImage` | `false` | 是否将群聊和 C2C 私聊中的普通图片消息段上传为官方素材并转换成 Markdown 图片；默认仍以原生图片发送 |
 | `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
+| `autoBindUser` | `true` | 官方机器人和野生号同群时，根据群友的聊天消息自动完成 QQ 绑定，无需发送 `#QQ绑定`，见下方「自动 QQ 绑定」 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
 | `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
 
@@ -429,6 +431,18 @@ node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
 `#一键群绑定` 需要发给野生号。`#野生静默…` 系列命令优先由野生号处理；在静默群、私聊官方机器人或没有野生号的群里，改由官方机器人处理（官方机器人需已完成群绑定才能识别群号）。
 
 `wild-silence.json` 里的 `wild`（野生号列表）和 `official`（官方机器人 QQ）留空时自动识别。
+
+### 自动 QQ 绑定
+
+官方机器人和野生号在同一个群时，群友正常聊天即可自动完成 `#QQ绑定`，不需要群友手动操作。需要：官方机器人在该群开启「获取全部消息」、该群已完成群绑定、野生号也在群里。
+
+两边收到的消息 ID 不通用，按「同一个群 + 同样的文字 + 时间相近」对应：
+
+- 前后 15 秒内，同一段文字在官方机器人这边只有一个未绑定的 openid 发过、在野生号这边只有一个 QQ 号发过，才算一次匹配；多人同时发相同内容时放弃，少于 2 个字或没有文字的消息不参与。
+- 匹配后做与 `#QQ绑定` 相同的头像校验，通过才保存。QQ 号用默认头像时，需要两段不同的文字都对上同一对才保存。
+- 同一个 openid 对上过不同的 QQ 号、或 QQ 号已绑定给其他 openid 时视为冲突，不再自动绑定，请改用 `#QQ绑定`。
+
+绑定成功只在日志中记录 `QQBot 自动绑定成功：openid → QQ号`，不会在群里发消息。配置 `autoBindUser: false` 可关闭。
 
 静默群里，官方机器人要发的 json / xml / music 卡片（包括带卡片的合并转发）会改由同群的野生号发送，其余内容仍由官方机器人发送；野生号不在群或发送失败时，卡片照旧由官方机器人发送。需要先完成群绑定。
 

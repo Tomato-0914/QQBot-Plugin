@@ -47,7 +47,7 @@ mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
 })
 mock.module(new URL("../lib/messageSender.js", import.meta.url).href, { namedExports: { installMessageSender () {} } })
 mock.module(new URL("../lib/messageStore.js", import.meta.url).href, { namedExports: { getRecordByMsgId: async () => undefined } })
-for (const app of ["qrlogin", "wildSilence", "autoGroupBind", "groupBind", "bind"])
+for (const app of ["qrlogin", "wildSilence", "autoGroupBind", "groupBind", "bind", "autoUserBind"])
   mock.module(new URL(`../app/${app}.js`, import.meta.url).href, {
     namedExports: { QRLoginPlugin: class {}, WildSilencePlugin: class {}, AutoGroupBindPlugin: class {} },
   })
