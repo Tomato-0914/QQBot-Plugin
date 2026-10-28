@@ -162,11 +162,15 @@ await test("卡片解析结果不看定时消息配置，始终先交给官方�
   const adapter = Bot.adapter[0]
   onDeal = async e => {
     await new Promise(resolve => setTimeout(resolve, 1))
-    return adapter.sendGroupMsg({ self_id: "wild", group_id: e.group_id }, "解析好的视频")
+    // 引用野生号消息 ID 的回复段官方机器人无法引用，转交时去掉
+    return adapter.sendGroupMsg({ self_id: "wild", group_id: e.group_id }, [
+      { type: "reply", id: "2146786680" },
+      "解析好的视频",
+    ])
   }
   try {
     await loader.deal({ ...groupMessage("wild"), message: [{ type: "xml", data: "<msg/>" }] })
-    assert.deepEqual(officialSent, [["123456", "解析好的视频"]])
+    assert.deepEqual(officialSent, [["123456", ["解析好的视频"]]])
     assert.deepEqual(wildSent, [])
 
     // 不在解析卡片时，定时消息配置为“不发”的照旧拦截
