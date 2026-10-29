@@ -80,7 +80,7 @@ await test("卡片和文字混发时，文字仍由官方机器人发送", async
 
 await test("合并转发、戳一戳交给野生号；文件官方机器人能发，照常由官方机器人发送", async () => {
   reset()
-  const forward = { type: "node", data: [{ message: "第一条" }, { message: "第二条" }] }
+  const forward = { type: "node", data: [{ message: "第一条" }, { message: { type: "image", file: "a.jpg" } }] }
   const poke = { type: "poke", qq: 10001 }
   await relay(data, forward)
   await relay(data, [file, "文件说明"])
@@ -92,6 +92,21 @@ await test("合并转发、戳一戳交给野生号；文件官方机器人能�
   reset({ official: { message_id: [], error: [new Error("文件上传失败")] } })
   await relay(data, file)
   assert.deepEqual(wildSent.map(i => i.msg), [[file]])
+})
+
+await test("只有文字的合并转发转成 Markdown 由官方机器人发送；关闭 forwardMarkdown 时仍交给野生号", async () => {
+  reset()
+  const thinking = { type: "node", data: [{ message: "思考过程" }, { message: "先搜索一下" }] }
+  await relay(data, thinking)
+  assert.deepEqual(wildSent, [])
+  assert.deepEqual(officialSent, [{ type: "markdown", data: "**思考过程**\n> 先搜索一下" }])
+
+  reset()
+  silenceConfig.forwardMarkdown = false
+  await relay(data, thinking)
+  silenceConfig.forwardMarkdown = true
+  assert.deepEqual(wildSent.map(i => i.msg), [thinking])
+  assert.deepEqual(officialSent, [])
 })
 
 await test("不限静默群：野生号在群里就会辅助；没有群绑定、野生号不在群、关闭辅助时不转交", async () => {
