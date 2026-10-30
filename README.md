@@ -10,6 +10,9 @@
 - 原项目：https://github.com/TimeRainStarSky/Yunzai-QQBot-Plugin
 - 当前版本：在原项目基础上进行模块拆分、结构调整与功能补充
 - `wiki.md`：整理了按钮、Markdown 等 QQBot 消息组件用法
+- 参考实现（wind-trace 版官方 Bot 适配器，两个平台内容相同）：
+  - GitCode：https://gitcode.com/wind-trace/Yunzai-QQBot-Plugin
+  - Gitee：https://gitee.com/wind-trace-typ/Yunzai-QQBot-Plugin
 
 > 感谢原作者的开源贡献。本项目为二改拆分版本，遇到与原版差异时请以当前项目代码为准。
 
