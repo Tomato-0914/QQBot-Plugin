@@ -309,6 +309,16 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 - `Bot[id].pickGroup(群号).getJoinRequestList()`：待处理的申请，每条带 `user_id`、`nickname`、`comment`、`flag`
 - `Bot[id].pickGroup(群号).setAddRequest(user_id, flag, approve, reason, block)`：同意或拒绝
 
+## 好友事件与分享链接
+
+用户添加、删除机器人时触发 Yunzai 的 `notice.friend.increase` / `notice.friend.decrease` 事件，
+`e.user_id` 为用户（已绑定时为 QQ 号）。好友新增事件可以直接 `e.reply(msg)` 回复（使用 event_id 被动回复）。
+
+`Bot[id].getGenerateUrl(callback_data)` 生成机器人的分享链接，`callback_data` 最长 32 个字符。
+用户通过这个链接添加机器人时，好友新增事件的 `e.callback_data` 就是这里传入的数据，可以用来区分推广渠道、邀请人等；
+其他来源添加时 `e.callback_data` 为空，来源编号在 `e.scene`（2003 / 2004 为分享链接）。
+据参考实现的作者实测，只有 Webhook 模式能收到 `callback_data`，WebSocket 模式收不到。
+
 ## 群黑名单
 
 需要机器人是群管理员。黑名单里的成员不能再申请加群：
