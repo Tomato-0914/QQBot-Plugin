@@ -65,6 +65,30 @@ await test("申请列表翻页，审批按 approve / decline 调用接口", asyn
   assert.deepEqual(requests.at(-1).body, { op: "decline", join_request_id: "B", reject_reason: "答案不对", add_to_member_blacklist: true })
 })
 
+await test("群黑名单翻页，加入、移出分别用 add / del", async () => {
+  const requests = []
+  const pages = { undefined: { users: [{ member_openid: "A" }], next_cursor: "c1" }, c1: { users: [{ member_openid: "B" }] } }
+  const service = new GroupService({
+    get: async (url, options) => {
+      requests.push({ url, params: options.params })
+      return { data: pages[options.params.cursor] }
+    },
+    post: async (url, body) => {
+      requests.push({ url, body })
+      return { data: { fail_openids: [] } }
+    },
+  })
+  const sdk = Object.assign(Object.create(SdkBot.prototype), { groupService: service })
+
+  assert.deepEqual((await sdk.getGroupMemberBlacklist("G")).map(user => user.member_openid), ["A", "B"])
+  assert.deepEqual(requests[0], { url: "/v2/groups/G/member_blacklist", params: { limit: 100 } })
+  await sdk.setGroupMemberBlacklist("G", ["A"], true)
+  assert.deepEqual(requests.at(-1), { url: "/v2/groups/G/member_blacklist", body: { op: "add", member_openids: ["A"] } })
+  await sdk.setGroupMemberBlacklist("G", ["A"], false)
+  assert.equal(requests.at(-1).body.op, "del")
+  await assert.rejects(sdk.setGroupMemberBlacklist("G", Array(21).fill("A")), /最多操作 20 个/)
+})
+
 // 适配器：client.js 的依赖全部替换为桩
 mock.module(new URL("../lib/uinMap.js", import.meta.url).href, {
   namedExports: {

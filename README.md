@@ -309,6 +309,15 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 - `Bot[id].pickGroup(群号).getJoinRequestList()`：待处理的申请，每条带 `user_id`、`nickname`、`comment`、`flag`
 - `Bot[id].pickGroup(群号).setAddRequest(user_id, flag, approve, reason, block)`：同意或拒绝
 
+## 群黑名单
+
+需要机器人是群管理员。黑名单里的成员不能再申请加群：
+
+- `Bot[id].pickGroup(群号).getBlacklist()`：黑名单成员，每条带 `user_id`（已绑定时为 QQ 号）、`nickname`
+- `Bot[id].pickGroup(群号).setBlacklist(user_ids, true)`：加入黑名单，`false` 为移出；可传一个或多个（单次最多 20 个），
+  返回值的 `fail_user_ids` 为操作失败的成员
+- 踢人时拉黑：`kickMember(user_id, true)`；拒绝入群申请时拉黑：`e.approve(false, 理由, true)`
+
 插件内置经过验证的维护版 `qq-official-bot` SDK 运行快照，不再从远程仓库安装 SDK 本体。
 
 

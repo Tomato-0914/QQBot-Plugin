@@ -76,6 +76,14 @@ Bot.bot1 = {
         { member_openid: "openid-x", username: "乙", join_request_id: "R2" },
       ]
     },
+    getGroupMemberBlacklist: async groupOpenid => {
+      sdkCalls.push(["blacklist", groupOpenid])
+      return [{ member_openid: "openid-456", username: "甲" }, { member_openid: "openid-x", username: "乙" }]
+    },
+    setGroupMemberBlacklist: async (...args) => {
+      sdkCalls.push(["setBlacklist", ...args])
+      return { fail_openids: ["openid-789"] }
+    },
     setGroupJoinRequest: async (...args) => {
       sdkCalls.push(["approve", ...args])
       return true
@@ -178,4 +186,18 @@ await test("setAddRequest 把群号和申请人转换为 OpenID 后审批", asyn
   assert.deepEqual(sdkCalls.at(-1), ["approve", "group-openid-123", "openid-456", false, {
     join_request_id: "R1", reject_reason: "不认识", add_to_blacklist: true,
   }])
+})
+
+await test("群黑名单：列表映射 QQ 号，加入、移出时转换为 OpenID 并返回失败的成员", async () => {
+  const group = adapter.pickGroup("bot1", "123")
+  const list = await group.getBlacklist()
+  assert.deepEqual(sdkCalls.at(-1), ["blacklist", "group-openid-123"])
+  assert.deepEqual(list.map(user => [user.user_id, user.nickname]), [["456", "甲"], ["openid-x", "乙"]])
+
+  const result = await group.setBlacklist(["456", 789])
+  assert.deepEqual(sdkCalls.at(-1), ["setBlacklist", "group-openid-123", ["openid-456", "openid-789"], true])
+  assert.deepEqual(result.fail_user_ids, ["789"])
+
+  await group.setBlacklist("456", false)
+  assert.deepEqual(sdkCalls.at(-1), ["setBlacklist", "group-openid-123", ["openid-456"], false])
 })
