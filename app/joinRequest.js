@@ -1,19 +1,57 @@
 /**
- * 入群申请处理命令（仅官方机器人，仅主人，在申请的群里使用）
+ * 入群申请处理
+ *
+ * 官方机器人的命令（仅主人，在申请的群里使用）：
  *   #QQBot入群申请          查询本群待处理的入群申请，每条带同意 / 拒绝按钮
  *   #QQBot同意入群 [申请ID]  同意；本群只有一条待处理申请时可以不填 ID
  *   #QQBot拒绝入群 [申请ID]  拒绝
- * 收到申请时的提示和按钮由 lib/joinRequestNotify.js 发送
+ * 野生号收到申请时在群里发提示，主人引用回复「同意」或「拒绝」处理（官方机器人的提示也可以这样回复）。
+ * 提示由 lib/joinRequestNotify.js 发送
  */
 import plugin from "../../../lib/plugins/plugin.js"
+import loader from "../../../lib/plugins/loader.js"
+import cfg from "../../../lib/config/config.js"
 import {
-  forgetRequest,
+  decideRequest,
   getRememberedRequest,
+  handleQuoteDecision,
+  notifyWildJoinRequest,
   rememberRequest,
   rememberedRequestsOf,
   requestButtons,
   requestText,
 } from "../lib/joinRequestNotify.js"
+import { config } from "../lib/config.js"
+import { isWild } from "../lib/wildSilence.js"
+
+/** 发消息的人是不是主人：loader 设置 e.isMaster 之前就要判断，按 other.yaml 的主人名单 */
+export function isMasterOf (e) {
+  const list = [...(cfg.master?.[e.self_id] || []), ...(cfg.masterQQ || [])].map(String)
+  return list.includes(String(e.user_id))
+}
+
+// 用 Bot.on 而不是插件规则：野生号静默的群里，消息不会进入插件，引用回复也要能处理。
+// 状态放在全局，热重载时不会重复注册监听
+const hooks = (globalThis.__qqbotJoinRequestHooks ??= { installed: false })
+hooks.onRequest = e => {
+  if (config.joinRequestNotify === false || !isWild(e.self_id)) return
+  notifyWildJoinRequest(e).catch(err => Bot.makeLog("error", ["处理入群申请失败", err], e.self_id))
+}
+hooks.onMessage = e => {
+  handleQuoteDecision(e, isMasterOf).catch(err => Bot.makeLog("error", ["处理入群申请回复失败", err], e.self_id))
+}
+if (!hooks.installed) {
+  hooks.installed = true
+  Bot.on("request.group.add", e => hooks.onRequest(e))
+  Bot.on("message.group", e => hooks.onMessage(e))
+}
+
+// 主人引用回复「同意」/「拒绝」处理了申请的消息，不再交给其他插件（避免被当成和机器人对话）
+loader._joinRequestDeal ??= loader.deal
+loader.deal = function (e) {
+  if (e?._joinRequestDecision) return
+  return loader._joinRequestDeal.call(this, e)
+}
 
 const errorText = err => {
   const code = err?.code ?? err?.err_code ?? err?.response?.data?.code
@@ -93,11 +131,10 @@ export class JoinRequestPlugin extends plugin {
 
     const name = req.nickname ? `${req.nickname}(${req.user_id})` : String(req.user_id)
     try {
-      await e.bot.pickGroup(e.group_id).setAddRequest(req._raw_user_id || req.member_openid || req.user_id, req.flag, approve)
+      await decideRequest({ ...req, self_id: req.self_id || e.self_id, group_id: req.group_id || e.group_id }, approve)
     } catch (err) {
       return this.reply(`${approve ? "同意" : "拒绝"} ${name} 的入群申请失败：${errorText(err)}`)
     }
-    forgetRequest(req.flag)
     return this.reply(`已${approve ? "同意" : "拒绝"} ${name} 的入群申请`)
   }
 }
