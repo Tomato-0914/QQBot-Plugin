@@ -337,4 +337,5 @@ await import("./app/autoUserBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
 export { WildSilencePlugin } from "./app/wildSilence.js"
 export { AutoGroupBindPlugin } from "./app/autoGroupBind.js"
+export { MessageFilterPlugin } from "./app/messageFilter.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))

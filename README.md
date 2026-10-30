@@ -71,6 +71,8 @@ forceVerifyImageResource: false
 messageRetentionDays: 7
 autoBindUser: true
 inputNotify: true
+filterBotMsg: false
+filterOnlyAtOtherBot: false
 bot:
   maxRetry: 10
   timeout: 30000
@@ -90,6 +92,8 @@ token: []
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `autoBindUser` | `true` | 官方机器人和野生号同群时，根据群友的聊天消息自动完成 QQ 绑定，无需发送 `#QQ绑定`，见下方「自动 QQ 绑定」 |
 | `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
+| `filterBotMsg` | `false` | 丢弃其他机器人发的消息，命令 `#QQBot开启bot消息过滤` 切换 |
+| `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息，命令 `#QQBot开启纯at其他bot过滤` 切换 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
 | `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
 
@@ -220,6 +224,8 @@ token:
 | `#QQ强制绑定openid <openid> 123456789` | `master` | 跳过头像校验，直接绑定指定 `openid` |
 | `#群绑定` | `master` | 查看当前群绑定状态或绑定提示 |
 | `#群绑定123456789` | `master` | 将当前 QQBot 群 `openid` 绑定到真实群号 |
+| `#QQBot开启bot消息过滤` / `#QQBot关闭bot消息过滤` | `master` | 不再处理其他机器人发的消息，避免多个机器人互相触发 |
+| `#QQBot开启纯at其他bot过滤` / `#QQBot关闭纯at其他bot过滤` | `master` | 不再处理只 @ 了其他机器人、没有 @ 本机器人的群消息 |
 
 ## 绑定说明
 
