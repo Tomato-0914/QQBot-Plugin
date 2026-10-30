@@ -353,6 +353,21 @@ await e.reply(segment.button([
 ]))
 ```
 
+### 图文卡片
+
+群聊和 C2C 私聊可以发送带封面图的图文卡片（`msg_type: 8`），点击打开链接：
+
+```js
+await e.reply(segment.card({
+  title: "晴天",                       // 超过 50 字截断
+  description: "周杰伦",               // 超过 50 字截断
+  pic_url: "https://example.com/a.jpg", // http(s) 图片链接
+  url: "https://y.qq.com/...",         // 必须是 https，自动追加 qq_aio_chat_type=3 在 QQ 内打开
+}))
+```
+
+卡片单独作为一条消息发送，和文字一起发时文字在前。四个字段都是必填，缺少或链接不合法时发送报错。
+
 ### 私聊流式消息
 
 私聊事件提供 `e.streamReply(payload, options?)`。插件会自动使用当前消息作为被动

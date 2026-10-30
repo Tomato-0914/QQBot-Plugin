@@ -10,6 +10,8 @@ const {
 } = await import("./lib/groupMap.js")
 const { installMessageSender } = await import("./lib/messageSender.js")
 const { getRecordByMsgId, listRecentRecords } = await import("./lib/messageStore.js")
+const { installCardSegment } = await import("./lib/card.js")
+installCardSegment()
 /** 群信息（含机器人群内身份）缓存有效期 */
 const GROUP_INFO_TTL = 10 * 60 * 1000
 const adapter = new (class QQBotAdapter {
