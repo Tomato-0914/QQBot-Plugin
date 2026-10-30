@@ -70,6 +70,7 @@ markdownImage: false
 forceVerifyImageResource: false
 messageRetentionDays: 7
 autoBindUser: true
+inputNotify: true
 bot:
   maxRetry: 10
   timeout: 30000
@@ -88,6 +89,7 @@ token: []
 | `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `autoBindUser` | `true` | 官方机器人和野生号同群时，根据群友的聊天消息自动完成 QQ 绑定，无需发送 `#QQ绑定`，见下方「自动 QQ 绑定」 |
+| `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
 | `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
 
