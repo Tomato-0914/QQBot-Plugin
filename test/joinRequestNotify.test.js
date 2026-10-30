@@ -222,3 +222,24 @@ await test("野生号的 invite（邀请机器人进群）不提示，关闭配�
   delete config.joinRequestNotify
   assert.equal(wildSent.length, before)
 })
+
+await test("报错去掉请求地址；已处理过的申请直接提示", () => {
+  const handled = new Error('Request "/v2/groups/G/approval_join_request/M" failed with code(40103005): 申请已经被处理')
+  assert.equal(notify.joinRequestError(handled), "这条申请已经处理过了")
+  const other = new Error('Request "/v2/groups/G/join_request_list" failed with code(11253): 没有权限')
+  assert.equal(notify.joinRequestError(other), "没有权限（错误码 11253）")
+  assert.equal(notify.joinRequestError(Object.assign(new Error("no permission"), { code: 11253 })), "no permission（错误码 11253）")
+  assert.equal(notify.joinRequestError(new Error("network down")), "network down")
+})
+
+await test("点旧提示的按钮：已处理过的申请提示后不再记着", async () => {
+  notify.rememberRequest({ flag: "REQ_OLD", self_id: "bot1", group_id: "123", user_id: "u", _raw_user_id: "U" })
+  const setAddRequest = group.setAddRequest
+  group.setAddRequest = async () => {
+    throw new Error('Request "/v2/groups/G/approval_join_request/U" failed with code(40103005): 申请已经被处理')
+  }
+  const replies = await run("#QQBot拒绝入群 REQ_OLD")
+  group.setAddRequest = setAddRequest
+  assert.deepEqual(replies, ["拒绝 u 的入群申请失败：这条申请已经处理过了"])
+  assert.equal(notify.getRememberedRequest("REQ_OLD"), undefined)
+})

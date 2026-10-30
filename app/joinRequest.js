@@ -15,6 +15,7 @@ import {
   decideRequest,
   getRememberedRequest,
   handleQuoteDecision,
+  joinRequestError,
   notifyWildJoinRequest,
   rememberRequest,
   rememberedRequestsOf,
@@ -53,10 +54,7 @@ loader.deal = function (e) {
   return loader._joinRequestDeal.call(this, e)
 }
 
-const errorText = err => {
-  const code = err?.code ?? err?.err_code ?? err?.response?.data?.code
-  return `${err?.message || err}${code && !String(err?.message).includes(code) ? `（错误码 ${code}）` : ""}`
-}
+const errorText = joinRequestError
 
 export class JoinRequestPlugin extends plugin {
   constructor () {
