@@ -2,14 +2,16 @@ logger.info(logger.yellow("- 正在加载 QQBot 适配器插件"))
 // 动态导入子模块（避免子目录 .js 被 CJS 解析）
 const { config } = await import("./lib/config.js")
 const { Converter } = await import("./lib/converter.js")
-const { connectBot } = await import("./lib/client.js")
-const { isQQUin, loadMappingsFromFile, translateToOpenid } = await import("./lib/uinMap.js")
+const { connectBot, joinRequestComment } = await import("./lib/client.js")
+const { getAppid, getMappedUin, isQQUin, loadMappingsFromFile, translateToOpenid } = await import("./lib/uinMap.js")
 const {
   loadMappingsFromFile: loadGroupMappings,
   translateGroupToOpenid,
 } = await import("./lib/groupMap.js")
 const { installMessageSender } = await import("./lib/messageSender.js")
 const { getRecordByMsgId, listRecentRecords } = await import("./lib/messageStore.js")
+const { installSegments } = await import("./lib/segments.js")
+installSegments()
 /** 群信息（含机器人群内身份）缓存有效期 */
 const GROUP_INFO_TTL = 10 * 60 * 1000
 const adapter = new (class QQBotAdapter {
@@ -231,6 +233,52 @@ const adapter = new (class QQBotAdapter {
           throw new Error(`移出群成员失败：${result?.remove_members_result || "开放平台未返回成功"}`)
         return true
       },
+      /** 待处理的入群申请（需要机器人是群管理员），user_id 为绑定的 QQ 号或 OpenID，comment 为验证信息 */
+      getJoinRequestList: async () => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const list = await i.bot.sdk.getGroupJoinRequestList(groupOpenid)
+        const appid = getAppid(i.bot)
+        return Promise.all(list.map(async item => ({
+          ...item,
+          user_id: await getMappedUin(appid, item.member_openid) || item.member_openid,
+          nickname: item.username,
+          comment: joinRequestComment(item.verify_info),
+          flag: item.join_request_id,
+        })))
+      },
+      /** 同意或拒绝入群申请；block 为 true 时拒绝并加入群黑名单 */
+      setAddRequest: async (user_id, join_request_id, approve = true, reason = "", block = false) => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const memberOpenid = await translateToOpenid(i.bot, String(user_id))
+        return i.bot.sdk.setGroupJoinRequest(groupOpenid, memberOpenid, approve, {
+          join_request_id,
+          reject_reason: reason,
+          add_to_blacklist: block,
+        })
+      },
+      /** 群黑名单（需要机器人是群管理员），user_id 为绑定的 QQ 号或 OpenID */
+      getBlacklist: async () => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const users = await i.bot.sdk.getGroupMemberBlacklist(groupOpenid)
+        const appid = getAppid(i.bot)
+        return Promise.all(users.map(async user => ({
+          ...user,
+          user_id: await getMappedUin(appid, user.member_openid) || user.member_openid,
+          nickname: user.username,
+        })))
+      },
+      /**
+       * 加入（add 为 true）或移出群黑名单，user_ids 可以是一个或多个（单次最多 20 个）；
+       * 返回值的 fail_user_ids 为操作失败的成员
+       */
+      setBlacklist: async (user_ids, add = true) => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const ids = [].concat(user_ids).map(String)
+        const openids = await Promise.all(ids.map(user_id => translateToOpenid(i.bot, user_id)))
+        const result = await i.bot.sdk.setGroupMemberBlacklist(groupOpenid, openids, add)
+        const failed = new Set(result?.fail_openids || [])
+        return { ...result, fail_user_ids: ids.filter((_, index) => failed.has(openids[index])) }
+      },
       /** QQBot 无拉取历史消息接口，以 message_id 作为 seq 查本地 JSONL 记录。 */
       getChatHistory: async (seq, cnt = 1) => {
         const record = await getRecordByMsgId(
@@ -314,4 +362,5 @@ await import("./app/autoUserBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
 export { WildSilencePlugin } from "./app/wildSilence.js"
 export { AutoGroupBindPlugin } from "./app/autoGroupBind.js"
+export { MessageFilterPlugin } from "./app/messageFilter.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))

@@ -10,6 +10,9 @@
 - 原项目：https://github.com/TimeRainStarSky/Yunzai-QQBot-Plugin
 - 当前版本：在原项目基础上进行模块拆分、结构调整与功能补充
 - `wiki.md`：整理了按钮、Markdown 等 QQBot 消息组件用法
+- 参考实现（wind-trace 版官方 Bot 适配器，两个平台内容相同）：
+  - GitCode：https://gitcode.com/wind-trace/Yunzai-QQBot-Plugin
+  - Gitee：https://gitee.com/wind-trace-typ/Yunzai-QQBot-Plugin
 
 > 感谢原作者的开源贡献。本项目为二改拆分版本，遇到与原版差异时请以当前项目代码为准。
 
@@ -67,6 +70,9 @@ markdownImage: false
 forceVerifyImageResource: false
 messageRetentionDays: 7
 autoBindUser: true
+inputNotify: true
+filterBotMsg: false
+filterOnlyAtOtherBot: false
 bot:
   maxRetry: 10
   timeout: 30000
@@ -85,6 +91,9 @@ token: []
 | `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `autoBindUser` | `true` | 官方机器人和野生号同群时，根据群友的聊天消息自动完成 QQ 绑定，无需发送 `#QQ绑定`，见下方「自动 QQ 绑定」 |
+| `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
+| `filterBotMsg` | `false` | 丢弃其他机器人发的消息，命令 `#QQBot开启bot消息过滤` 切换 |
+| `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息，命令 `#QQBot开启纯at其他bot过滤` 切换 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
 | `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
 
@@ -215,6 +224,8 @@ token:
 | `#QQ强制绑定openid <openid> 123456789` | `master` | 跳过头像校验，直接绑定指定 `openid` |
 | `#群绑定` | `master` | 查看当前群绑定状态或绑定提示 |
 | `#群绑定123456789` | `master` | 将当前 QQBot 群 `openid` 绑定到真实群号 |
+| `#QQBot开启bot消息过滤` / `#QQBot关闭bot消息过滤` | `master` | 不再处理其他机器人发的消息，避免多个机器人互相触发 |
+| `#QQBot开启纯at其他bot过滤` / `#QQBot关闭纯at其他bot过滤` | `master` | 不再处理只 @ 了其他机器人、没有 @ 本机器人的群消息 |
 
 ## 绑定说明
 
@@ -282,6 +293,41 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 `Bot[id].sdk.getGroupMemberList(groupOpenid)`（自动翻页）和
 `Bot[id].sdk.getGroupMemberInfo(groupOpenid, memberOpenid)`。
 
+## 入群申请
+
+机器人是群管理员时，开放平台推送的入群申请（`GROUP_JOIN_REQUEST`）会转成 Yunzai 的
+`request.group.add` 事件（被邀请的申请为 `request.group.invite`），写法与野生号相同：
+
+- `e.user_id` 为申请人（已绑定 QQ 时为 QQ 号），`e.nickname` 为昵称
+- `e.comment` 为验证信息：填写的验证消息，或问答题的“问题：…\n答案：…”；原始结构在 `e.verify_info`
+- `e.flag`（同 `e.join_request_id`）为申请 ID
+- `e.approve(true)` 同意，`e.approve(false, 理由, true)` 拒绝并加入群黑名单
+- `e.reply(msg)` 在群里发主动消息（入群申请不支持被动回复）
+
+群对象也可以主动查询和处理：
+
+- `Bot[id].pickGroup(群号).getJoinRequestList()`：待处理的申请，每条带 `user_id`、`nickname`、`comment`、`flag`
+- `Bot[id].pickGroup(群号).setAddRequest(user_id, flag, approve, reason, block)`：同意或拒绝
+
+## 好友事件与分享链接
+
+用户添加、删除机器人时触发 Yunzai 的 `notice.friend.increase` / `notice.friend.decrease` 事件，
+`e.user_id` 为用户（已绑定时为 QQ 号）。好友新增事件可以直接 `e.reply(msg)` 回复（使用 event_id 被动回复）。
+
+`Bot[id].getGenerateUrl(callback_data)` 生成机器人的分享链接，`callback_data` 最长 32 个字符。
+用户通过这个链接添加机器人时，好友新增事件的 `e.callback_data` 就是这里传入的数据，可以用来区分推广渠道、邀请人等；
+其他来源添加时 `e.callback_data` 为空，来源编号在 `e.scene`（2003 / 2004 为分享链接）。
+据参考实现的作者实测，只有 Webhook 模式能收到 `callback_data`，WebSocket 模式收不到。
+
+## 群黑名单
+
+需要机器人是群管理员。黑名单里的成员不能再申请加群：
+
+- `Bot[id].pickGroup(群号).getBlacklist()`：黑名单成员，每条带 `user_id`（已绑定时为 QQ 号）、`nickname`
+- `Bot[id].pickGroup(群号).setBlacklist(user_ids, true)`：加入黑名单，`false` 为移出；可传一个或多个（单次最多 20 个），
+  返回值的 `fail_user_ids` 为操作失败的成员
+- 踢人时拉黑：`kickMember(user_id, true)`；拒绝入群申请时拉黑：`e.approve(false, 理由, true)`
+
 插件内置经过验证的维护版 `qq-official-bot` SDK 运行快照，不再从远程仓库安装 SDK 本体。
 
 
@@ -325,6 +371,44 @@ await e.reply(segment.button([
   { text: "取消", callback: "#取消" }
 ]))
 ```
+
+### 图文卡片
+
+群聊和 C2C 私聊可以发送带封面图的图文卡片（`msg_type: 8`），点击打开链接：
+
+```js
+await e.reply(segment.card({
+  title: "晴天",                       // 超过 50 字截断
+  description: "周杰伦",               // 超过 50 字截断
+  pic_url: "https://example.com/a.jpg", // http(s) 图片链接
+  url: "https://y.qq.com/...",         // 必须是 https，自动追加 qq_aio_chat_type=3 在 QQ 内打开
+}))
+```
+
+卡片单独作为一条消息发送，和文字一起发时文字在前。四个字段都是必填，缺少或链接不合法时发送报错。
+
+### 其他消息段构造器
+
+插件加载时注册到全局 `segment`，其他插件或适配器已经定义的同名构造器不会被覆盖：
+
+| 构造器 | 说明 |
+| --- | --- |
+| `segment.bubble(...按钮)` | 气泡按钮，显示在输入框上方，最多 3 个，按钮写法同 `segment.button`；挂在最后一条 Markdown 消息上 |
+| `segment.small()` | 本条消息的按钮改用小号字体 |
+| `segment.qqbotcmd(文字, 指令, enter, reply)` | Markdown 指令文字：点击后把指令填入输入框，`enter` 为 `true` 时直接发送 |
+| `segment.inlinecmd(文字, 指令, enter, reply)` | 旧版 `mqqapi://aio/inlinecmd` 指令链接，推荐优先用 `qqbotcmd` |
+| `segment.link(文字, 链接)` | Markdown 跳转链接 `[🔗文字](链接)` |
+| `segment.ark(模板ID, 数据)` | ark 模板消息，支持 23（文字列表）、24（大图卡片）、37（大图通知），也可用 `segment.ark23/ark24/ark37` |
+
+`qqbotcmd`、`inlinecmd`、`link` 返回 Markdown 消息段，和文字放在同一个数组里：
+
+```js
+await e.reply(["发送 ", segment.qqbotcmd("帮助", "#帮助", true), " 查看菜单"])
+await e.reply(["你好", segment.bubble({ text: "签到", callback: "#签到" }, { text: "菜单", input: "#菜单" })])
+await e.reply(segment.ark37({ prompt: "通知", metatitle: "标题", metasubtitle: "副标题", metacover: "https://...", metaurl: "https://..." }))
+```
+
+ark 23 的 `list` 每项可以是文字、`[文字, 链接]` 或 `{ desc, link }`。普通消息和频道消息不支持气泡按钮，会被忽略。
 
 ### 私聊流式消息
 
