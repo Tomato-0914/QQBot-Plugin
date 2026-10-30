@@ -9,7 +9,7 @@ const {
   translateGroupToOpenid,
 } = await import("./lib/groupMap.js")
 const { installMessageSender } = await import("./lib/messageSender.js")
-const { getRecordByMsgId } = await import("./lib/messageStore.js")
+const { getRecordByMsgId, listRecentRecords } = await import("./lib/messageStore.js")
 /** 群信息（含机器人群内身份）缓存有效期 */
 const GROUP_INFO_TTL = 10 * 60 * 1000
 const adapter = new (class QQBotAdapter {
@@ -177,6 +177,14 @@ const adapter = new (class QQBotAdapter {
         i._raw_group_id ? { groupOpenId: i._raw_group_id } : undefined,
       ),
       recallMsg: message_id => this.recallGroupMsg(i, message_id),
+      /**
+       * 本群最近的消息记录（本地 JSONL，从早到晚），direction 为 "outgoing" 时只取机器人自己发的；
+       * 官方接口拉不到历史消息，撤回机器人最近发的消息时用这里的 message_id
+       */
+      getRecentMsgs: async (count = 20, direction) => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        return listRecentRecords(id, { groupOpenId: groupOpenid }, { limit: count, direction })
+      },
       getInfo: (no_cache, add) => this.getGroupInfo(i, no_cache, add),
       pickMember: user_id => this.pickMember(id, group_id, user_id),
       getMemberMap: () => i.bot.gml.get(group_id),
