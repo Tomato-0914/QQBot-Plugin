@@ -377,6 +377,29 @@ await e.reply(segment.card({
 
 卡片单独作为一条消息发送，和文字一起发时文字在前。四个字段都是必填，缺少或链接不合法时发送报错。
 
+### 其他消息段构造器
+
+插件加载时注册到全局 `segment`，其他插件或适配器已经定义的同名构造器不会被覆盖：
+
+| 构造器 | 说明 |
+| --- | --- |
+| `segment.bubble(...按钮)` | 气泡按钮，显示在输入框上方，最多 3 个，按钮写法同 `segment.button`；挂在最后一条 Markdown 消息上 |
+| `segment.small()` | 本条消息的按钮改用小号字体 |
+| `segment.qqbotcmd(文字, 指令, enter, reply)` | Markdown 指令文字：点击后把指令填入输入框，`enter` 为 `true` 时直接发送 |
+| `segment.inlinecmd(文字, 指令, enter, reply)` | 旧版 `mqqapi://aio/inlinecmd` 指令链接，推荐优先用 `qqbotcmd` |
+| `segment.link(文字, 链接)` | Markdown 跳转链接 `[🔗文字](链接)` |
+| `segment.ark(模板ID, 数据)` | ark 模板消息，支持 23（文字列表）、24（大图卡片）、37（大图通知），也可用 `segment.ark23/ark24/ark37` |
+
+`qqbotcmd`、`inlinecmd`、`link` 返回 Markdown 消息段，和文字放在同一个数组里：
+
+```js
+await e.reply(["发送 ", segment.qqbotcmd("帮助", "#帮助", true), " 查看菜单"])
+await e.reply(["你好", segment.bubble({ text: "签到", callback: "#签到" }, { text: "菜单", input: "#菜单" })])
+await e.reply(segment.ark37({ prompt: "通知", metatitle: "标题", metasubtitle: "副标题", metacover: "https://...", metaurl: "https://..." }))
+```
+
+ark 23 的 `list` 每项可以是文字、`[文字, 链接]` 或 `{ desc, link }`。普通消息和频道消息不支持气泡按钮，会被忽略。
+
 ### 私聊流式消息
 
 私聊事件提供 `e.streamReply(payload, options?)`。插件会自动使用当前消息作为被动

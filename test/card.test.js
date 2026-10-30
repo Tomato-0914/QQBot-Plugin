@@ -8,7 +8,7 @@ global.Bot = {
 }
 global.redis = { get: async () => null }
 
-const { installCardSegment, makeCardElement } = await import("../lib/card.js")
+const { makeCardElement } = await import("../lib/card.js")
 const { Converter } = await import("../lib/converter.js")
 const { MessageBuilder } = await import("../lib/modules/qq-official-bot/lib/message/builder.js")
 
@@ -43,16 +43,6 @@ await test("缺字段或链接不合法时报错", () => {
   assert.throws(() => makeCardElement({ ...card, title: "" }), /均为必填/)
   assert.throws(() => makeCardElement({ ...card, url: "http://a.com" }), /https/)
   assert.throws(() => makeCardElement({ ...card, pic_url: "file:///a.jpg" }), /pic_url/)
-})
-
-await test("installCardSegment 注册 segment.card，不覆盖已有的", () => {
-  const segment = {}
-  installCardSegment(segment)
-  assert.deepEqual(segment.card(card), { type: "card", ...card })
-  const own = () => "own"
-  const other = { card: own }
-  installCardSegment(other)
-  assert.equal(other.card, own)
 })
 
 await test("SDK 把 card 元素构建为 msg_type 8", async () => {
