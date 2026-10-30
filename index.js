@@ -2,8 +2,8 @@ logger.info(logger.yellow("- 正在加载 QQBot 适配器插件"))
 // 动态导入子模块（避免子目录 .js 被 CJS 解析）
 const { config } = await import("./lib/config.js")
 const { Converter } = await import("./lib/converter.js")
-const { connectBot } = await import("./lib/client.js")
-const { isQQUin, loadMappingsFromFile, translateToOpenid } = await import("./lib/uinMap.js")
+const { connectBot, joinRequestComment } = await import("./lib/client.js")
+const { getAppid, getMappedUin, isQQUin, loadMappingsFromFile, translateToOpenid } = await import("./lib/uinMap.js")
 const {
   loadMappingsFromFile: loadGroupMappings,
   translateGroupToOpenid,
@@ -230,6 +230,29 @@ const adapter = new (class QQBotAdapter {
         if (result?.remove_members_result !== "success")
           throw new Error(`移出群成员失败：${result?.remove_members_result || "开放平台未返回成功"}`)
         return true
+      },
+      /** 待处理的入群申请（需要机器人是群管理员），user_id 为绑定的 QQ 号或 OpenID，comment 为验证信息 */
+      getJoinRequestList: async () => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const list = await i.bot.sdk.getGroupJoinRequestList(groupOpenid)
+        const appid = getAppid(i.bot)
+        return Promise.all(list.map(async item => ({
+          ...item,
+          user_id: await getMappedUin(appid, item.member_openid) || item.member_openid,
+          nickname: item.username,
+          comment: joinRequestComment(item.verify_info),
+          flag: item.join_request_id,
+        })))
+      },
+      /** 同意或拒绝入群申请；block 为 true 时拒绝并加入群黑名单 */
+      setAddRequest: async (user_id, join_request_id, approve = true, reason = "", block = false) => {
+        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
+        const memberOpenid = await translateToOpenid(i.bot, String(user_id))
+        return i.bot.sdk.setGroupJoinRequest(groupOpenid, memberOpenid, approve, {
+          join_request_id,
+          reject_reason: reason,
+          add_to_blacklist: block,
+        })
       },
       /** QQBot 无拉取历史消息接口，以 message_id 作为 seq 查本地 JSONL 记录。 */
       getChatHistory: async (seq, cnt = 1) => {

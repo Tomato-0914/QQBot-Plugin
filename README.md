@@ -285,6 +285,22 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 `Bot[id].sdk.getGroupMemberList(groupOpenid)`（自动翻页）和
 `Bot[id].sdk.getGroupMemberInfo(groupOpenid, memberOpenid)`。
 
+## 入群申请
+
+机器人是群管理员时，开放平台推送的入群申请（`GROUP_JOIN_REQUEST`）会转成 Yunzai 的
+`request.group.add` 事件（被邀请的申请为 `request.group.invite`），写法与野生号相同：
+
+- `e.user_id` 为申请人（已绑定 QQ 时为 QQ 号），`e.nickname` 为昵称
+- `e.comment` 为验证信息：填写的验证消息，或问答题的“问题：…\n答案：…”；原始结构在 `e.verify_info`
+- `e.flag`（同 `e.join_request_id`）为申请 ID
+- `e.approve(true)` 同意，`e.approve(false, 理由, true)` 拒绝并加入群黑名单
+- `e.reply(msg)` 在群里发主动消息（入群申请不支持被动回复）
+
+群对象也可以主动查询和处理：
+
+- `Bot[id].pickGroup(群号).getJoinRequestList()`：待处理的申请，每条带 `user_id`、`nickname`、`comment`、`flag`
+- `Bot[id].pickGroup(群号).setAddRequest(user_id, flag, approve, reason, block)`：同意或拒绝
+
 插件内置经过验证的维护版 `qq-official-bot` SDK 运行快照，不再从远程仓库安装 SDK 本体。
 
 

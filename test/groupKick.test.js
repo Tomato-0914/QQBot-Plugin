@@ -31,9 +31,13 @@ global.Bot = Object.assign(Object.create(null), {
 })
 mock.module(new URL("../lib/config.js", import.meta.url).href, { namedExports: { config: { bot: {} } } })
 mock.module(new URL("../lib/converter.js", import.meta.url).href, { namedExports: { Converter: class {} } })
-mock.module(new URL("../lib/client.js", import.meta.url).href, { namedExports: { connectBot: async () => true } })
+mock.module(new URL("../lib/client.js", import.meta.url).href, {
+  namedExports: { connectBot: async () => true, joinRequestComment: info => info?.verify_message || "" },
+})
 mock.module(new URL("../lib/uinMap.js", import.meta.url).href, {
   namedExports: {
+    getAppid: () => "appid",
+    getMappedUin: async (_appid, openid) => (openid === "openid-456" ? "456" : undefined),
     isQQUin: () => false,
     loadMappingsFromFile: async () => {},
     translateToOpenid: async (_bot, userId) => `openid-${userId}`,
@@ -63,6 +67,17 @@ Bot.bot1 = {
   gml: new Map(),
   info: { appid: "appid" },
   sdk: {
+    getGroupJoinRequestList: async groupOpenid => {
+      sdkCalls.push(["list", groupOpenid])
+      return [
+        { member_openid: "openid-456", username: "甲", join_request_id: "R1", verify_info: { verify_message: "你好" } },
+        { member_openid: "openid-x", username: "乙", join_request_id: "R2" },
+      ]
+    },
+    setGroupJoinRequest: async (...args) => {
+      sdkCalls.push(["approve", ...args])
+      return true
+    },
     removeGroupMembers: async (...args) => {
       sdkCalls.push(args)
       if (removeError) throw removeError
@@ -145,4 +160,20 @@ await test("好友、群对象的 sendFile 以文件消息由官方机器人发�
     ["group", "123", { type: "file", file: "/tmp/a.txt", name: "a.txt" }],
     ["friend", "456", { type: "file", file: "/tmp/b.txt", name: "b.txt" }],
   ])
+})
+
+await test("入群申请列表：成员 OpenID 映射为 QQ 号，附带验证信息", async () => {
+  const list = await adapter.pickGroup("bot1", "123").getJoinRequestList()
+  assert.deepEqual(sdkCalls.at(-1), ["list", "group-openid-123"])
+  assert.deepEqual(list.map(item => [item.user_id, item.nickname, item.flag, item.comment]), [
+    ["456", "甲", "R1", "你好"],
+    ["openid-x", "乙", "R2", ""],
+  ])
+})
+
+await test("setAddRequest 把群号和申请人转换为 OpenID 后审批", async () => {
+  await adapter.pickGroup("bot1", "123").setAddRequest("456", "R1", false, "不认识", true)
+  assert.deepEqual(sdkCalls.at(-1), ["approve", "group-openid-123", "openid-456", false, {
+    join_request_id: "R1", reject_reason: "不认识", add_to_blacklist: true,
+  }])
 })
