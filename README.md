@@ -73,7 +73,6 @@ autoBindUser: true
 inputNotify: true
 filterBotMsg: false
 filterOnlyAtOtherBot: false
-joinRequestNotify: true
 bot:
   maxRetry: 10
   timeout: 30000
@@ -95,7 +94,6 @@ token: []
 | `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
 | `filterBotMsg` | `false` | 丢弃其他机器人发的消息，命令 `#QQBot开启bot消息过滤` 切换 |
 | `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息，命令 `#QQBot开启纯at其他bot过滤` 切换 |
-| `joinRequestNotify` | `true` | 收到入群申请时在群里发提示和主人专用的同意 / 拒绝按钮，见「入群申请」 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
 | `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
 
@@ -228,8 +226,6 @@ token:
 | `#群绑定123456789` | `master` | 将当前 QQBot 群 `openid` 绑定到真实群号 |
 | `#QQBot开启bot消息过滤` / `#QQBot关闭bot消息过滤` | `master` | 不再处理其他机器人发的消息，避免多个机器人互相触发 |
 | `#QQBot开启纯at其他bot过滤` / `#QQBot关闭纯at其他bot过滤` | `master` | 不再处理只 @ 了其他机器人、没有 @ 本机器人的群消息 |
-| `#QQBot入群申请` | `master` | 查询本群待处理的入群申请，带同意 / 拒绝按钮 |
-| `#QQBot同意入群 [申请ID]` / `#QQBot拒绝入群 [申请ID]` | `master` | 处理入群申请，只有一条时可以不填 ID |
 
 ## 绑定说明
 
@@ -308,18 +304,8 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 - `e.approve(true)` 同意，`e.approve(false, 理由, true)` 拒绝并加入群黑名单
 - `e.reply(msg)` 在群里发主动消息（入群申请不支持被动回复）
 
-收到申请时，机器人会在申请的群里发一条提示（申请人、验证信息），带「✅ 同意」「❌ 拒绝」按钮，只有主人能点；
-按钮重启后仍然有效。配置 `joinRequestNotify: false` 可关闭提示，事件照常下发给其他插件。主人也可以用命令处理：
-
-- `#QQBot入群申请`：查询本群待处理的申请，每条带同意 / 拒绝按钮；接口没有权限时会显示错误原因
-- `#QQBot同意入群 [申请ID]`、`#QQBot拒绝入群 [申请ID]`：本群只有一条待处理申请时可以不填 ID
-
-野生号（NapCat 等 OneBotv11 / ICQQ）是管理员时也会提示：收到入群申请后在群里发申请人和验证信息，**不带按钮**，
-主人**引用回复这条提示**「同意」或「拒绝」即可处理（官方机器人的提示也可以这样回复）。
-
-- 官方机器人和野生号都收到同一个人的申请时只提示一次
-- 引用回复在野生号静默的群里同样有效；处理了申请的这条回复不会再交给其他插件
-- 申请信息只保存在本次运行中，重启后野生号之前的提示无法再引用回复处理，可在 QQ 群通知里处理
+本插件只负责把申请转成事件，不发提醒；入群申请提醒（带同意 / 拒绝按钮）由 Cheshire-Plugin 提供，
+ChatGPT-Plugin 的 `join_request` 工具可以查看、同意、拒绝。
 
 群对象也可以主动查询和处理：
 
