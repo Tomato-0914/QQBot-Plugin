@@ -25,7 +25,9 @@
 - 支持 `openid` 与真实 QQ 号的绑定映射
 - 支持 QQBot 群 `openid` 与真实群号的绑定映射
 - 支持从群消息事件中提取成员名称与身份信息
-- 支持扫码登录添加 QQBot 配置
+- 支持扫码登录添加 QQBot 配置，扫码后直接上线
+- 支持机器人入群 / 退群、主动消息开关等通知事件
+- 启动时连接失败自动重试
 - 支持频道、群聊、私聊的基础撤回与发送能力
 
 ## 环境要求
@@ -62,7 +64,6 @@ Yunzai/config/QQBot.yaml
 tips:
   - 欢迎使用 TRSS-Yunzai QQBot Plugin ! 作者：时雨🌌星空
   - 参考：https://github.com/TimeRainStarSky/Yunzai-QQBot-Plugin
-permission: master
 toBotUpload: true
 hideGuildRecall: false
 imageLength: 10
@@ -83,7 +84,6 @@ token: []
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `permission` | `master` | 管理指令权限 |
 | `toBotUpload` | `true` | 语音是否优先通过其他 Bot 上传；Markdown 图片始终使用当前 QQBot 的官方素材接口 |
 | `hideGuildRecall` | `false` | 频道撤回时是否隐藏相关提示 |
 | `imageLength` | `10` | 图片压缩阈值，单位 MiB（`1024 * 1024` 字节）；超过阈值时尝试压缩，未超过时保留原图 |
@@ -139,11 +139,7 @@ QQBot 的 `materialService.uploadImage()` 上传图片，将返回的 `qqbot-med
 不会自动删除其他素材。该流程不改变频道、原生图片及私聊流式消息的发送方式。
 平台规则参见[官方素材管理文档](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/material-management.html)。
 
-素材生命周期测试不连接 QQ，也不加载真实账号配置：
-
-```sh
-node --experimental-test-module-mocks --test test/material.test.js
-```
+素材生命周期测试不连接 QQ，也不加载真实账号配置，见下方「测试」。
 
 ### URL 文件上传
 
@@ -171,8 +167,8 @@ QQBot SDK 前将文件流式缓存到 `temp/QQBot/file-upload`，再以本地路
 说明：
 
 - 二维码有效期约 1 分钟
-- 扫码成功后会自动写入 `QQBot.yaml`
-- 配置写入后通常需要重启 Yunzai 生效
+- 扫码成功后会自动写入 `QQBot.yaml`，并直接连接新账号，不用重启
+- 同一时间只能进行一个扫码流程
 
 ### 方式二：手动配置 Token
 
@@ -263,6 +259,17 @@ ChatGPT-Plugin 的 `join_request` 工具可以查看、同意、拒绝。
 - `Bot[id].pickGroup(群号).getJoinRequestList()`：待处理的申请，每条带 `user_id`、`nickname`、`comment`、`flag`
 - `Bot[id].pickGroup(群号).setAddRequest(user_id, flag, approve, reason, block)`：同意或拒绝
 
+## 机器人入群 / 退群、主动消息开关
+
+- 机器人被拉进群、被移出群时触发 `notice.group.increase` / `notice.group.decrease`，
+  按 Yunzai 惯例 `e.user_id` 为机器人自己，`e.operator_id` 为操作人。
+  入群事件可以直接 `e.reply(msg)` 发欢迎、自我介绍（使用 event_id 被动回复）；退群后群列表里的这个群会被移除
+- 群里开启、关闭「接收机器人主动消息」时触发 `notice.group.receive_open` / `notice.group.receive_close`，
+  好友开启、关闭时触发 `notice.friend.receive_open` / `notice.friend.receive_close`；
+  `e.allow_proactive_msg` 为开关状态，开启事件可以 `e.reply(msg)` 被动回复。群开关状态同时记在群列表的 `allow_proactive_msg` 上
+
+频道、子频道、表情表态、论坛等通知暂不转换，只在 debug 日志中记录。
+
 ## 好友事件与分享链接
 
 用户添加、删除机器人时触发 Yunzai 的 `notice.friend.increase` / `notice.friend.decrease` 事件，
@@ -302,13 +309,14 @@ QQBot-Plugin
 │   ├── segments.js        # 扩展消息段构造器
 │   ├── forwardMarkdown.js # 纯文字合并转发转 Markdown
 │   ├── musicMarkdown.js   # 音乐卡片转 Markdown 链接
+│   ├── unsupportedSegments.js # 发不了的卡片等消息段转换
 │   ├── groupMap.js        # 群 openid 与真实群号映射
 │   ├── uinMap.js          # 用户 openid 与真实 QQ 号映射
 │   ├── avatarVerify.js    # 绑定时的头像校验
 │   ├── modules
 │   │   └── qq-official-bot  # 内置 QQBot SDK 运行产物
 │   └── ...                # 素材、文件缓存、Markdown 兼容等工具
-├── test                   # node --test 测试（mock SDK，不连接 QQ）
+├── test                   # pnpm test 测试（mock SDK，不连接 QQ）
 ├── index.js               # 适配器入口
 ├── package.json           # 依赖信息
 ├── README.md              # 项目说明
@@ -428,7 +436,11 @@ data/bots/<botId>/messages/users/<userOpenId>/2026-08-26.jsonl
 只保存类型与字节数，不会把完整字节数组写入 JSONL，其余原始字段保持不变。
 
 引用回复、`getMsg()` 和 `getChatHistory()` 会直接查询这些文件，不再使用 7 天
-Redis／内存消息缓存。
+Redis 消息缓存。最近收发的 5000 条消息另有内存索引，查最近的消息时不用读文件；
+好友、群对象的 `getMsg()` 只查本会话的记录。
+
+群对象和好友对象的 `getChatHistory(seq, cnt = 20)` 按 icqq 约定返回 `seq`（即 `message_id`）
+及之前的 `cnt` 条消息，从早到晚排列，`seq` 那条在最后；`seq` 为空时返回最新的 `cnt` 条。
 
 消息撤回后会追加一条 `type: "recall"` 记录。原消息行仍然保留，但后续消息查询不会
 再返回该消息。
@@ -446,14 +458,27 @@ Redis／内存消息缓存。
 `await` 或 `.catch()` 处理失败。退出直接等待 `sdk.stop()` 完成，不依赖接收器再次触发
 `close` 事件；完整停止清理能力在新版 SDK 产物同步到插件后生效。
 
-插件会在私聊、群聊、频道消息和绑定命令的异步入口捕获失败，并记录账号及错误。
+启动时连接失败（如网络还没准备好）会自动重试，间隔 30 秒起每次翻倍，最长 10 分钟；
+AppID 或密钥错误时不重试，需要检查 `QQBot.yaml` 后重启。
+
+`Bot[id].info` 只放 `id`、`appid`、头像和官方返回的机器人资料，不含 token、secret，
+其他插件打印或序列化机器人信息时不会泄露密钥。
+
+插件会在私聊、群聊、频道消息的异步入口捕获失败，并记录账号及错误。
 通知事件保留原有错误处理；进程级未捕获异常继续由 Yunzai 宿主管理。
 
-边界回归测试使用 mock SDK、配置和存储，不连接 QQ，也不加载真实账号数据：
+群信息查询失败后 1 分钟内不再重复请求接口，有旧的群信息时先用旧的。
+
+## 测试
+
+测试使用 mock SDK、配置和存储，不连接 QQ，也不加载真实账号数据。安装依赖后在插件目录运行：
 
 ```sh
-node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
+pnpm test
 ```
+
+插件放在 `Yunzai/plugins/` 下或单独克隆都能运行；单独克隆时用到的 Yunzai 模块由
+`test/support/` 下的桩文件代替。需要 Node.js 22 及以上。
 
 ## 合并转发
 
@@ -462,6 +487,15 @@ Markdown：标题加粗，每个节点一段引用块。带图片、文件等内
 仍按普通消息拆开发送。`forwardMarkdown: false` 可关闭。
 
 音乐卡片同样发不了，会改发一条 Markdown 链接 `🎵 歌名 - 歌手`，点开是歌曲页面。
+
+其他发不了的消息段也不会再被当成一段 JSON 文字发出去：
+
+- json / xml 卡片（QQ 小程序、链接分享等）取标题和跳转地址，改发 Markdown 链接 `🔗 标题`；没有地址时发 `[卡片] 标题`
+- 链接分享（`share`）改发 Markdown 链接，位置（`location`）改发 `[位置] 名称 地址`
+- 戳一戳、窗口抖动、匿名、骰子、猜拳等 QQ 客户端专有的消息段直接去掉
+- 其他不认识的消息段有 `text` 字段时按文字发送，否则去掉
+
+其他插件可以通过「扩展接口」先把这些内容交给别的账号发送，没发出去的才按上面处理。
 
 ## 扩展接口
 

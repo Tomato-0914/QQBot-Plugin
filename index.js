@@ -18,6 +18,16 @@ const GROUP_INFO_TTL = 10 * 60 * 1000
 /** 群信息查询失败后，这段时间内不再请求接口，直接返回上次的错误 */
 const GROUP_INFO_FAIL_TTL = 60 * 1000
 const groupInfoFailures = new Map()
+/** 连接失败后的重试间隔：30 秒起，每次翻倍，最长 10 分钟 */
+const RECONNECT_MIN = 30 * 1000
+const RECONNECT_MAX = 10 * 60 * 1000
+const reconnectTimers = new Map()
+
+/** AppID 或密钥错误，重试也连不上 */
+function isCredentialError (err) {
+  const code = Number(err?.err_code ?? err?.code ?? err?.response?.data?.code)
+  return code === 100016 || /invalid appid or secret/i.test(String(err?.message || ""))
+}
 const adapter = new (class QQBotAdapter {
   constructor() {
     this.id = "QQBot"
@@ -364,15 +374,40 @@ const adapter = new (class QQBotAdapter {
     }
   }
 
-  async connect(token) {
-    return connectBot(this, token)
+  /**
+   * 连接一个账号；失败时（如启动时网络还没好）按 30 秒、1 分钟、2 分钟……最长 10 分钟的间隔自动重试，
+   * AppID 或密钥错误时不重试
+   */
+  async connect(token, attempt = 0) {
+    const id = String(token).split(":")[0]
+    clearTimeout(reconnectTimers.get(id))
+    reconnectTimers.delete(id)
+    if (await connectBot(this, token)) return true
+
+    const err = Bot[id]?.loginError
+    if (isCredentialError(err)) {
+      Bot.makeLog("error", "AppID 或密钥错误，请检查 QQBot.yaml 后重启，不再自动重试", id)
+      return false
+    }
+    const delay = Math.min(RECONNECT_MIN * 2 ** attempt, RECONNECT_MAX)
+    Bot.makeLog("warn", `连接失败，${Math.round(delay / 1000)} 秒后重试`, id)
+    const timer = setTimeout(async () => {
+      reconnectTimers.delete(id)
+      try {
+        await Bot[id]?.sdk?.stop?.()
+      } catch {}
+      this.connect(token, attempt + 1).catch(err => Bot.makeLog("error", ["重试连接失败", err], id))
+    }, delay)
+    timer.unref?.()
+    reconnectTimers.set(id, timer)
+    return false
   }
 
   async load() {
     await loadMappingsFromFile()
     await loadGroupMappings()
     for (const token of config.token) {
-      await connectBot(this, token)
+      await this.connect(token)
       await Bot.sleep(500)
     }
   }

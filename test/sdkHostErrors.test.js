@@ -25,10 +25,10 @@ class MockSdk extends EventEmitter {
 }
 
 mock.module("qq-official-bot", {
-  exports: { Bot: MockSdk, ReceiverMode: { WEBSOCKET: "websocket" } },
+  namedExports: { Bot: MockSdk, ReceiverMode: { WEBSOCKET: "websocket" } },
 })
 mock.module(new URL("../lib/uinMap.js", import.meta.url).href, {
-  exports: {
+  namedExports: {
     getAppid: (...args) => resolveAppid(...args),
     applyUinMapping: async () => {},
     getMappedUin: async () => undefined,
@@ -38,19 +38,16 @@ mock.module(new URL("../lib/uinMap.js", import.meta.url).href, {
   },
 })
 mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
-  exports: { getGroupUin: async () => undefined },
+  namedExports: { getGroupUin: async () => undefined },
 })
 mock.module(new URL("../lib/messageBuilder.js", import.meta.url).href, {
-  exports: { makeMessage: (...args) => handleMessage(...args) },
+  namedExports: { makeMessage: (...args) => handleMessage(...args) },
 })
 mock.module(new URL("../lib/messageStore.js", import.meta.url).href, {
-  exports: { getRecordByMsgId: async () => undefined },
+  namedExports: { getRecordByMsgId: async () => undefined },
 })
 mock.module(new URL("../lib/streamMessage.js", import.meta.url).href, {
-  exports: { makeStreamReplyPayload: value => value },
-})
-mock.module(new URL("../../../lib/config/config.js", import.meta.url).href, {
-  exports: { default: { master: { "test-bot": ["owner"] } } },
+  namedExports: { makeStreamReplyPayload: value => value },
 })
 
 const previousBot = global.Bot

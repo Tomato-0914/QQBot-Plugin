@@ -2,6 +2,9 @@
   "name": "QQBot-Plugin",
   "type": "module",
   "author": "TimeRainStarSky",
+  "scripts": {
+    "test": "node --experimental-test-module-mocks --import ./test/support/register.mjs --test \"test/*.test.js\""
+  },
   "dependencies": {
     "@noble/curves": "^1.6.0",
     "@tencent-connect/qqbot-connector": "^1.1.0",

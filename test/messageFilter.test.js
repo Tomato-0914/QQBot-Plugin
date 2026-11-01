@@ -37,9 +37,13 @@ await test("filterOnlyAtOtherBot 只过滤 @ 了其他机器人、没 @ 我的�
 
 // makeMessage：被过滤的消息不下发
 const emitted = []
+let groupInfoCalls = 0
 const adapter = {
   config: { messageRetentionDays: 0 },
-  getGroupInfo: async data => ({ group_id: data.group_id, group_name: "测试群" }),
+  getGroupInfo: async data => {
+    groupInfoCalls++
+    return { group_id: data.group_id, group_name: "测试群" }
+  },
   setGroupMap: async () => {},
   sendGroupMsg: async () => {},
 }
@@ -73,6 +77,11 @@ await test("makeMessage 丢弃被过滤的消息，其他消息照常下发", as
   await makeMessage(adapter, "10000", groupMessage("m2", { mentions: [otherBotAt] }))
   await makeMessage(adapter, "10000", groupMessage("m3", { author: { bot: false } }))
   assert.deepEqual(emitted.map(e => e.message_id), ["m3"])
+  // 被过滤的消息不查群信息、不写聊天记录
+  assert.equal(groupInfoCalls, 1)
+  const files = await fs.readdir(path.join(root, "10000", "messages", "groups", "GROUP_OPENID"))
+  const lines = (await fs.readFile(path.join(root, "10000", "messages", "groups", "GROUP_OPENID", files[0]), "utf8")).trim().split("\n")
+  assert.deepEqual(lines.map(line => JSON.parse(line).message_id), ["m3"])
 })
 
 await fs.rm(root, { recursive: true, force: true })

@@ -5,7 +5,7 @@ import sharp from "sharp"
 // Run with: node --experimental-test-module-mocks --test test/material.test.js
 // Mock host configuration and QQ transport; never load accounts or write chat records.
 mock.module(new URL("../../../lib/config/config.js", import.meta.url).href, {
-  exports: { default: {} },
+  defaultExport: {},
 })
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=", "base64")
