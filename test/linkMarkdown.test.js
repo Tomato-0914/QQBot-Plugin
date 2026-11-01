@@ -36,6 +36,12 @@ test("网址在中文标点、空白、末尾英文标点处结束，多余的�
     "两个 [🔗 a.com](https://a.com) 和 [🔗 b.com](https://b.com/?q=1&x=2)")
 })
 
+test("IPv6 地址的网址：方括号属于网址，链接文字去掉方括号", () => {
+  assert.equal(linkifyText("面板 http://[fe80::1]:48370/api/x 打开"),
+    "面板 [🔗 fe80::1](http://[fe80::1]:48370/api/x) 打开")
+  assert.equal(linkifyText("https://[2406:da18::bad8]/"), "[🔗 2406:da18::bad8](https://[2406:da18::bad8]/)")
+})
+
 test("已经是 Markdown 链接的不处理；没有网址时原样返回；其余文字交给 escape", () => {
   const md = "[文档](https://a.com/doc) 和 <https://b.com> 和 [https://c.com](https://c.com)"
   assert.equal(linkifyText(md), md)
@@ -61,6 +67,6 @@ test("发送时文字段的网址转成链接，网址里的 @ 不被转义；li
 
 test("纯文字合并转发转 Markdown 时，文字里的网址也转成链接", () => {
   const forward = { type: "node", data: [{ message: "搜索结果" }, { message: "来源 https://a.com/1" }] }
-  assert.equal(forwardToMarkdown(forward, { linkify: linkifyText }).data, "**搜索结果**\n> 来源 [🔗 a.com](https://a.com/1)")
-  assert.equal(forwardToMarkdown(forward).data, "**搜索结果**\n> 来源 https://a.com/1")
+  assert.equal(forwardToMarkdown(forward, { linkify: linkifyText }).data, "### 搜索结果\n> 来源 [🔗 a.com](https://a.com/1)")
+  assert.equal(forwardToMarkdown(forward).data, "### 搜索结果\n> 来源 https://a.com/1")
 })
