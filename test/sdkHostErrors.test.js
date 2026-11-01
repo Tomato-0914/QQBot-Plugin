@@ -49,6 +49,9 @@ mock.module(new URL("../lib/messageStore.js", import.meta.url).href, {
 mock.module(new URL("../lib/streamMessage.js", import.meta.url).href, {
   namedExports: { makeStreamReplyPayload: value => value },
 })
+mock.module(new URL("../../../lib/config/config.js", import.meta.url).href, {
+  defaultExport: { master: { "test-bot": ["owner"] } },
+})
 
 const previousBot = global.Bot
 const previousSegment = global.segment
@@ -197,6 +200,68 @@ await test("group member notices reply as active messages without event_id", asy
   assert.equal(sent[0][0].group_id, "group-openid")
   assert.equal(sent[0][1], "welcome")
 })
+
+await import("../app/bind.js")
+for (const eventName of ["message.private.friend", "message.group.normal"]) {
+  const makeEvent = overrides => ({
+    bot: Bot["test-bot"],
+    self_id: "test-bot",
+    user_id: "owner",
+    _raw_user_id: "test-openid",
+    message_type: eventName.includes("private") ? "private" : "group",
+    raw_message: "#QQ绑定",
+    message: [],
+    ...overrides,
+  })
+
+  await test(`${eventName} binding help still replies normally`, async () => {
+    const replies = []
+    const before = logs.length
+    Bot.emit(eventName, makeEvent({ reply: async value => { replies.push(value) } }))
+    await nextTurn()
+    assert.equal(replies.length, 1)
+    assert.equal(replies[0][1].type, "button")
+    assert.equal(logs.length, before)
+  })
+
+  for (const failure of ["throw", "reject"]) {
+    await test(`${eventName} binding catches reply ${failure}`, async () => {
+      const error = new Error(`binding reply ${failure}`)
+      const before = logs.length
+      const event = makeEvent({
+        reply () {
+          if (failure === "throw") throw error
+          return Promise.reject(error)
+        },
+      })
+      assert.doesNotThrow(() => Bot.emit(eventName, event))
+      await nextTurn()
+      assert.equal(logs.length, before + 1)
+      assert.deepEqual(logs.at(-1), ["error", ["QQBot 绑定消息处理失败", error], "test-bot"])
+    })
+  }
+
+  await test(`${eventName} binding catches a failed error reply without another reply`, async () => {
+    const mappingError = new Error("mapping write failed")
+    const replyError = new Error("failure reply failed")
+    saveMapping = async () => { throw mappingError }
+    let replies = 0
+    const before = logs.length
+    Bot.emit(eventName, makeEvent({
+      raw_message: `#QQ强制绑定openid ${"a".repeat(32)} 123456`,
+      reply: async () => {
+        replies++
+        throw replyError
+      },
+    }))
+    await nextTurn()
+    assert.equal(replies, 1)
+    assert.equal(logs.length, before + 2)
+    assert.equal(logs.at(-2)[1].at(-1), mappingError)
+    assert.deepEqual(logs.at(-1), ["error", ["QQBot 绑定消息处理失败", replyError], "test-bot"])
+    saveMapping = async () => true
+  })
+}
 
 mock.restoreAll()
 global.Bot = previousBot

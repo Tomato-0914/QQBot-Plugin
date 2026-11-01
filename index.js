@@ -413,5 +413,8 @@ const adapter = new (class QQBotAdapter {
   }
 })()
 Bot.adapter.push(adapter)
+// 绑定命令：#QQ绑定、#群绑定（openid 换成真实 QQ 号 / 群号，很多 Yunzai 插件依赖）
+await import("./app/bind.js")
+await import("./app/groupBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))

@@ -92,8 +92,8 @@ token: []
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `forwardMarkdown` | `true` | 群聊和 C2C 私聊中只有文字的合并转发转成一条 Markdown 发送，见「合并转发」 |
 | `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
-| `filterBotMsg` | `false` | 丢弃其他机器人发的消息；开关命令 `#QQBot开启bot消息过滤` 由 Cheshire-Plugin 提供 |
-| `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息；开关命令 `#QQBot开启纯at其他bot过滤` 由 Cheshire-Plugin 提供 |
+| `filterBotMsg` | `false` | 丢弃其他机器人发的消息，避免多个机器人互相触发 |
+| `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息 |
 | `bot.maxRetry` | `10` | QQBot 请求最大重试次数 |
 | `bot.timeout` | `30000` | QQBot 其他接口的请求超时时间，单位毫秒；普通消息发送不使用此超时 |
 
@@ -212,8 +212,16 @@ token:
 | 命令 | 权限 | 使用场景 |
 | --- | --- | --- |
 | `#QQbot扫码登录` | `master` | 扫码授权并自动写入 Bot 配置 |
+| `#QQ绑定` | QQBot 私聊/群聊用户 | 查看 QQ 号绑定提示 |
+| `#QQ绑定123456789` | QQBot 私聊/群聊用户 | 将当前 QQBot `openid` 绑定到真实 QQ 号 |
+| `#QQ绑定@某人 123456789` | `master` | 校验被 @ 用户头像后代为绑定 |
+| `#QQ强制绑定@某人 123456789` | `master` | 跳过头像校验，直接为被 @ 用户绑定 |
+| `#QQ绑定openid <openid> 123456789` | `master` | 校验指定 `openid` 的头像后直接绑定 |
+| `#QQ强制绑定openid <openid> 123456789` | `master` | 跳过头像校验，直接绑定指定 `openid` |
+| `#群绑定` | `master` | 查看当前群绑定状态或绑定提示 |
+| `#群绑定123456789` | `master` | 将当前 QQBot 群 `openid` 绑定到真实群号 |
 
-`#QQ绑定`、`#群绑定` 和消息过滤开关命令已移到 Cheshire-Plugin，见下方「绑定映射」。
+消息过滤开关 `filterBotMsg`、`filterOnlyAtOtherBot` 直接修改 `QQBot.yaml`，见「配置项说明」。
 
 ## 绑定映射
 
@@ -223,8 +231,55 @@ QQ 官方 Bot 事件中通常拿到的是 `openid`，不是传统 QQ 号或群�
 - 收到消息时，已绑定用户的 `user_id` 换成 QQ 号，已绑定群的 `group_id` 换成群号；原始值保留在 `_raw_user_id`、`_raw_group_id`
 - 发送、撤回、群管理等操作传入 QQ 号或群号时，自动换回 `openid` 调用官方接口
 
-绑定命令（`#QQ绑定<QQ号>`、主人代绑定、`#群绑定<群号>` 等）由 Cheshire-Plugin 提供，
-通过 `adapter.mapping` 校验头像并保存，见下方「扩展接口」。
+其他插件也可以通过 `adapter.mapping` 查询、保存绑定，见下方「扩展接口」。
+
+### 用户绑定
+
+用户在 QQBot 私聊或群聊中发送：
+
+```text
+#QQ绑定123456789
+```
+
+插件会通过头像 MD5 对比校验当前 `openid` 与真实 QQ 号是否一致，校验通过后写入映射。
+
+群聊中，已完成自身 QQ 绑定的 `master` 可以代其他用户绑定：
+
+```text
+#QQ绑定@某人 123456789
+```
+
+普通代绑定会校验被 @ 用户头像。头像无法匹配时，`master` 可以明确使用强制命令：
+
+```text
+#QQ强制绑定@某人 123456789
+```
+
+强制代绑定会跳过头像校验，请确认 QQ 号和被 @ 用户无误后再使用。每次只能指定一名用户。
+
+无法 @ 到目标用户，但已经从日志等位置取得其 `openid` 时，可以直接指定 32 位 `openid`：
+
+```text
+#QQ绑定openid A1B2C3D4E5F60718293A4B5C6D7E8F90 123456789
+```
+
+普通 OPENID 绑定仍会校验目标头像。需要跳过头像校验时使用：
+
+```text
+#QQ强制绑定openid A1B2C3D4E5F60718293A4B5C6D7E8F90 123456789
+```
+
+这两条命令仅限 `master` 使用，同时支持 QQBot 私聊和群聊。
+
+### 群绑定
+
+群内 `master` 发送：
+
+```text
+#群绑定123456789
+```
+
+绑定成功后，当前 QQBot 群 `openid` 会映射为真实群号。
 
 ## 群成员信息
 
@@ -297,6 +352,8 @@ ChatGPT-Plugin 的 `join_request` 工具可以查看、同意、拒绝。
 ```text
 QQBot-Plugin
 ├── app
+│   ├── bind.js            # #QQ绑定 命令
+│   ├── groupBind.js       # #群绑定 命令
 │   └── qrlogin.js         # 扫码登录命令
 ├── lib
 │   ├── client.js          # QQBot 连接与事件转发（消息、通知、入群申请、按钮回调）
@@ -528,12 +585,8 @@ adapter.unuse("我的扩展")
 
 `adapter.config` 是 `QQBot.yaml` 的配置对象，修改后调用 `await adapter.saveConfig()` 保存。
 
-以下功能已移到 Cheshire-Plugin，通过上面的接口实现：
-
-- `#QQ绑定`、`#群绑定` 等绑定命令（`adapter.mapping`）
-- `#QQBot开启bot消息过滤` 等过滤开关命令（`adapter.config` / `adapter.saveConfig()`）
-- 和野生号（OneBotv11 / ICQQ）共存的功能：野生号静默、野生号辅助、一键群绑定、自动 QQ 绑定（`adapter.use()`），
-  配置文件仍是 `data/wild-silence.json`
+和野生号（OneBotv11 / ICQQ）同群共存的功能（野生号静默、野生号代发、自动 QQ 绑定等）不在本插件中，
+可以通过上面的接口在其他插件里实现。
 
 ## 已知限制
 

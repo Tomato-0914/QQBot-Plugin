@@ -54,6 +54,8 @@ mock.module(new URL("../lib/messageStore.js", import.meta.url).href, { namedExpo
 mock.module(new URL("../app/qrlogin.js", import.meta.url).href, {
   namedExports: { QRLoginPlugin: class {} },
 })
+for (const app of ["bind", "groupBind"])
+  mock.module(new URL(`../app/${app}.js`, import.meta.url).href, { namedExports: {} })
 
 await import("../index.js")
 const adapter = Bot.adapter.at(-1)
