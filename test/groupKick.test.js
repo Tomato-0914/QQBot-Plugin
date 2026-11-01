@@ -29,7 +29,7 @@ global.Bot = Object.assign(Object.create(null), {
   getMap: async () => new Map(),
   makeLog () {},
 })
-mock.module(new URL("../lib/config.js", import.meta.url).href, { namedExports: { config: { bot: {} } } })
+mock.module(new URL("../lib/config.js", import.meta.url).href, { namedExports: { config: { bot: {} }, configSave: async () => {} } })
 mock.module(new URL("../lib/converter.js", import.meta.url).href, { namedExports: { Converter: class {} } })
 mock.module(new URL("../lib/client.js", import.meta.url).href, {
   namedExports: { connectBot: async () => true, joinRequestComment: info => info?.verify_message || "" },
@@ -51,12 +51,9 @@ mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
 })
 mock.module(new URL("../lib/messageSender.js", import.meta.url).href, { namedExports: { installMessageSender () {} } })
 mock.module(new URL("../lib/messageStore.js", import.meta.url).href, { namedExports: { getRecordByMsgId: async () => undefined } })
-for (const app of ["qrlogin", "wildSilence", "autoGroupBind", "groupBind", "bind", "autoUserBind", "messageFilter"])
-  mock.module(new URL(`../app/${app}.js`, import.meta.url).href, {
-    namedExports: {
-      QRLoginPlugin: class {}, WildSilencePlugin: class {}, AutoGroupBindPlugin: class {}, MessageFilterPlugin: class {},
-    },
-  })
+mock.module(new URL("../app/qrlogin.js", import.meta.url).href, {
+  namedExports: { QRLoginPlugin: class {} },
+})
 
 await import("../index.js")
 const adapter = Bot.adapter.at(-1)
@@ -158,6 +155,38 @@ await test("群信息缓存过期后重新查询机器人群内身份，is_admin
   await adapter.getGroupInfo(data, false, true)
   assert.equal(queries, 2)
   assert.equal(adapter.pickGroup("bot2", "123").is_admin, false)
+})
+
+await test("群信息查询失败后 1 分钟内不再请求接口，有旧信息时先用旧的", async () => {
+  let queries = 0
+  let fail = true
+  Bot.bot3 = {
+    gl: new Map(),
+    sdk: {
+      getGroupInfo: async () => {
+        queries++
+        if (fail) throw new Error("无权限")
+        return { group_openid: "g3", group_name: "新群名" }
+      },
+      getGroupBotState: async () => ({ member_role: "member" }),
+    },
+  }
+  const data = { bot: Bot.bot3, self_id: "bot3", group_id: "333", _raw_group_id: "g3" }
+  await assert.rejects(adapter.getGroupInfo(data, false, true), /无权限/)
+  await assert.rejects(adapter.getGroupInfo(data, false, true), /无权限/)
+  assert.equal(queries, 1)
+
+  // no_cache 照常请求
+  fail = false
+  assert.equal((await adapter.getGroupInfo(data, true, true)).group_name, "新群名")
+  assert.equal(queries, 2)
+
+  // 有旧信息时失败返回旧的
+  fail = true
+  Bot.bot3.gl.get("333").info_time = 0
+  assert.equal((await adapter.getGroupInfo(data, false, true)).group_name, "新群名")
+  assert.equal((await adapter.getGroupInfo(data, false, true)).group_name, "新群名")
+  assert.equal(queries, 3)
 })
 
 await test("好友、群对象的 sendFile 以文件消息由官方机器人发送", async () => {

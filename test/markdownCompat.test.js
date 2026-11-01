@@ -49,5 +49,5 @@ test("只处理待发送消息里的 Markdown 文本内容", () => {
 
 test("群聊和私聊的发送出口都经过折叠块处理", () => {
   const source = fs.readFileSync(new URL("../lib/messageSender.js", import.meta.url), "utf8")
-  assert.match(source, /fixMarkdownMessages\(await adapter\.converter\.makeRawMarkdownMsg\(scopedData, msg\)\)/)
+  assert.match(source, /fixMarkdownMessages\(await adapter\.converter\.makeRawMarkdownMsg\(\s*scopedData,/)
 })

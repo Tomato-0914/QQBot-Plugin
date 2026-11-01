@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { mock, test } from "node:test"
+import { test } from "node:test"
 
 // Run with: node --experimental-test-module-mocks --test test/messageFilter.test.js
 // 机器人消息过滤：其他机器人的消息、只 @ 其他机器人的群消息
@@ -37,9 +37,13 @@ await test("filterOnlyAtOtherBot 只过滤 @ 了其他机器人、没 @ 我的�
 
 // makeMessage：被过滤的消息不下发
 const emitted = []
+let groupInfoCalls = 0
 const adapter = {
   config: { messageRetentionDays: 0 },
-  getGroupInfo: async data => ({ group_id: data.group_id, group_name: "测试群" }),
+  getGroupInfo: async data => {
+    groupInfoCalls++
+    return { group_id: data.group_id, group_name: "测试群" }
+  },
   setGroupMap: async () => {},
   sendGroupMsg: async () => {},
 }
@@ -73,42 +77,11 @@ await test("makeMessage 丢弃被过滤的消息，其他消息照常下发", as
   await makeMessage(adapter, "10000", groupMessage("m2", { mentions: [otherBotAt] }))
   await makeMessage(adapter, "10000", groupMessage("m3", { author: { bot: false } }))
   assert.deepEqual(emitted.map(e => e.message_id), ["m3"])
+  // 被过滤的消息不查群信息、不写聊天记录
+  assert.equal(groupInfoCalls, 1)
+  const files = await fs.readdir(path.join(root, "10000", "messages", "groups", "GROUP_OPENID"))
+  const lines = (await fs.readFile(path.join(root, "10000", "messages", "groups", "GROUP_OPENID", files[0]), "utf8")).trim().split("\n")
+  assert.deepEqual(lines.map(line => JSON.parse(line).message_id), ["m3"])
 })
 
 await fs.rm(root, { recursive: true, force: true })
-
-// 开关命令
-const config = {}
-let saved = 0
-mock.module(new URL("../../../lib/plugins/plugin.js", import.meta.url).href, {
-  defaultExport: class {
-    constructor (options) { Object.assign(this, options) }
-  },
-})
-mock.module(new URL("../lib/config.js", import.meta.url).href, {
-  namedExports: { config, configSave: async () => { saved++ } },
-})
-const { MessageFilterPlugin } = await import("../app/messageFilter.js")
-
-await test("开关命令修改并保存配置", async () => {
-  const app = new MessageFilterPlugin()
-  const replies = []
-  app.reply = msg => replies.push(msg)
-  const run = msg => {
-    const rule = app.rule.find(r => r.reg.test(msg))
-    assert.ok(rule, msg)
-    return app[rule.fnc]({ msg })
-  }
-
-  await run("#QQBot开启bot消息过滤")
-  assert.equal(config.filterBotMsg, true)
-  await run("#关闭机器人过滤")
-  assert.equal(config.filterBotMsg, false)
-  await run("#开启纯艾特其他机器人过滤")
-  assert.equal(config.filterOnlyAtOtherBot, true)
-  await run("#qqbot关闭纯AT其他BOT过滤")
-  assert.equal(config.filterOnlyAtOtherBot, false)
-  assert.equal(saved, 4)
-  assert.match(replies[0], /已开启bot 消息过滤/)
-  assert.ok(app.rule.every(r => r.permission === "master"))
-})

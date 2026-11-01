@@ -1,6 +1,6 @@
 logger.info(logger.yellow("- 正在加载 QQBot 适配器插件"))
 // 动态导入子模块（避免子目录 .js 被 CJS 解析）
-const { config } = await import("./lib/config.js")
+const { config, configSave } = await import("./lib/config.js")
 const { Converter } = await import("./lib/converter.js")
 const { connectBot, joinRequestComment } = await import("./lib/client.js")
 const { getAppid, getMappedUin, isQQUin, loadMappingsFromFile, translateToOpenid } = await import("./lib/uinMap.js")
@@ -9,11 +9,25 @@ const {
   translateGroupToOpenid,
 } = await import("./lib/groupMap.js")
 const { installMessageSender } = await import("./lib/messageSender.js")
-const { getRecordByMsgId, listRecentRecords } = await import("./lib/messageStore.js")
+const { installExtensions } = await import("./lib/extensions.js")
+const { getChatHistory, getRecordByMsgId, listRecentRecords } = await import("./lib/messageStore.js")
 const { installSegments } = await import("./lib/segments.js")
 installSegments()
 /** 群信息（含机器人群内身份）缓存有效期 */
 const GROUP_INFO_TTL = 10 * 60 * 1000
+/** 群信息查询失败后，这段时间内不再请求接口，直接返回上次的错误 */
+const GROUP_INFO_FAIL_TTL = 60 * 1000
+const groupInfoFailures = new Map()
+/** 连接失败后的重试间隔：30 秒起，每次翻倍，最长 10 分钟 */
+const RECONNECT_MIN = 30 * 1000
+const RECONNECT_MAX = 10 * 60 * 1000
+const reconnectTimers = new Map()
+
+/** AppID 或密钥错误，重试也连不上 */
+function isCredentialError (err) {
+  const code = Number(err?.err_code ?? err?.code ?? err?.response?.data?.code)
+  return code === 100016 || /invalid appid or secret/i.test(String(err?.message || ""))
+}
 const adapter = new (class QQBotAdapter {
   constructor() {
     this.id = "QQBot"
@@ -24,7 +38,10 @@ const adapter = new (class QQBotAdapter {
     if (process.platform === "win32") this.sep = ""
     this.converter = new Converter(this)
     this.config = config
+    /** 保存 QQBot.yaml，其他插件修改 adapter.config 后调用 */
+    this.saveConfig = configSave
     installMessageSender(this)
+    installExtensions(this)
   }
 
   getFriendMap(id) {
@@ -47,14 +64,32 @@ const adapter = new (class QQBotAdapter {
     const fresh = Date.now() - (cached?.info_time || 0) < GROUP_INFO_TTL
     if (!no_cache && fresh && cached?.group_name && cached?.member_role) return cached
 
+    const failureKey = `${data.self_id}:${group_id}`
+    const failure = groupInfoFailures.get(failureKey)
+    if (!no_cache && failure && Date.now() - failure.time < GROUP_INFO_FAIL_TTL) {
+      // 有旧的群信息时先用旧的
+      if (cached?.group_name) return cached
+      throw failure.error
+    }
+
     let group_openid = data._raw_group_id
     if (!group_openid || group_openid === group_id)
       group_openid = await translateGroupToOpenid(data.bot, group_id) || group_id
 
-    const [raw, { member_role }] = await Promise.all([
-      data.bot.sdk.getGroupInfo(group_openid),
-      data.bot.sdk.getGroupBotState(group_openid),
-    ])
+    let raw, state
+    try {
+      [raw, state] = await Promise.all([
+        data.bot.sdk.getGroupInfo(group_openid),
+        data.bot.sdk.getGroupBotState(group_openid),
+      ])
+    } catch (error) {
+      // 每条群消息都会查群信息，失败后短时间内不再重复请求
+      if (groupInfoFailures.size >= 1000) groupInfoFailures.clear()
+      groupInfoFailures.set(failureKey, { error, time: Date.now() })
+      if (!no_cache && cached?.group_name) return cached
+      throw error
+    }
+    groupInfoFailures.delete(failureKey)
     const info = {
       ...raw,
       group_id,
@@ -62,7 +97,7 @@ const adapter = new (class QQBotAdapter {
       group_openid: raw.group_openid || group_openid,
       _raw_group_id: raw.group_openid || group_openid,
       member_count: raw.group_member_num,
-      member_role,
+      member_role: state?.member_role,
       info_time: Date.now(),
     }
     if (add || data.bot.gl.has(group_id)) await data.bot.gl.set(group_id, info)
@@ -111,6 +146,11 @@ const adapter = new (class QQBotAdapter {
       bot: Bot[id],
       user_id: user_id.replace(`${id}${this.sep}`, ""),
     }
+    /** 查消息记录的会话范围（用户 openid）；只查这个好友的记录，不用扫全部会话 */
+    const userScope = async () => {
+      const openid = i._raw_user_id || await translateToOpenid(i.bot, i.user_id)
+      return openid && !isQQUin(openid) ? { userOpenId: openid } : undefined
+    }
     return {
       ...i,
       sendMsg: msg => this.sendFriendMsg(i, msg),
@@ -118,11 +158,9 @@ const adapter = new (class QQBotAdapter {
       sendFile: (file, name) => this.sendFriendMsg(i, { type: "file", file, name }),
       /** 发送一个 C2C 流式消息分片；调用方负责维护 index 和 stream_msg_id */
       sendStreamMsg: (payload, options) => this.sendFriendStreamMsg(i, payload, options),
-      getMsg: message_id => getRecordByMsgId(
-        id,
-        message_id,
-        i._raw_user_id ? { userOpenId: i._raw_user_id } : undefined,
-      ),
+      getMsg: async message_id => getRecordByMsgId(id, message_id, await userScope()),
+      /** QQBot 无拉取历史消息接口，从本地 JSONL 记录取 seq（message_id）及之前的 cnt 条 */
+      getChatHistory: async (seq, cnt = 20) => getChatHistory(id, await userScope(), seq, cnt),
       recallMsg: message_id => this.recallFriendMsg(i, message_id),
       getAvatarUrl: (size = 100) => {
         const userId = i._raw_user_id || i.user_id
@@ -166,6 +204,10 @@ const adapter = new (class QQBotAdapter {
       group_id: group_id.replace(`${id}${this.sep}`, ""),
     }
     const memberRole = i.member_role
+    /** 查消息记录的会话范围（群 openid）；只查这个群的记录，不用扫全部会话 */
+    const groupScope = async () => ({
+      groupOpenId: i._raw_group_id || await translateGroupToOpenid(i.bot, i.group_id) || i.group_id,
+    })
     return {
       ...i,
       is_owner: memberRole === "owner",
@@ -173,20 +215,14 @@ const adapter = new (class QQBotAdapter {
       sendMsg: msg => this.sendGroupMsg(i, msg),
       /** 按 Yunzai 约定发送群文件（官方机器人以文件消息发送） */
       sendFile: (file, name) => this.sendGroupMsg(i, { type: "file", file, name }),
-      getMsg: message_id => getRecordByMsgId(
-        id,
-        message_id,
-        i._raw_group_id ? { groupOpenId: i._raw_group_id } : undefined,
-      ),
+      getMsg: async message_id => getRecordByMsgId(id, message_id, await groupScope()),
       recallMsg: message_id => this.recallGroupMsg(i, message_id),
       /**
        * 本群最近的消息记录（本地 JSONL，从早到晚），direction 为 "outgoing" 时只取机器人自己发的；
        * 官方接口拉不到历史消息，撤回机器人最近发的消息时用这里的 message_id
        */
-      getRecentMsgs: async (count = 20, direction) => {
-        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
-        return listRecentRecords(id, { groupOpenId: groupOpenid }, { limit: count, direction })
-      },
+      getRecentMsgs: async (count = 20, direction) =>
+        listRecentRecords(id, await groupScope(), { limit: count, direction }),
       getInfo: (no_cache, add) => this.getGroupInfo(i, no_cache, add),
       pickMember: user_id => this.pickMember(id, group_id, user_id),
       getMemberMap: () => i.bot.gml.get(group_id),
@@ -279,15 +315,11 @@ const adapter = new (class QQBotAdapter {
         const failed = new Set(result?.fail_openids || [])
         return { ...result, fail_user_ids: ids.filter((_, index) => failed.has(openids[index])) }
       },
-      /** QQBot 无拉取历史消息接口，以 message_id 作为 seq 查本地 JSONL 记录。 */
-      getChatHistory: async (seq, cnt = 1) => {
-        const record = await getRecordByMsgId(
-          id,
-          seq,
-          i._raw_group_id ? { groupOpenId: i._raw_group_id } : undefined,
-        )
-        return record ? [record] : []
-      },
+      /**
+       * QQBot 无拉取历史消息接口，从本地 JSONL 记录取 seq（message_id）及之前的 cnt 条，
+       * 从早到晚排列，seq 那条在最后；seq 为空时取最新的 cnt 条
+       */
+      getChatHistory: async (seq, cnt = 20) => getChatHistory(id, await groupScope(), seq, cnt),
     }
   }
 
@@ -342,25 +374,44 @@ const adapter = new (class QQBotAdapter {
     }
   }
 
-  async connect(token) {
-    return connectBot(this, token)
+  /**
+   * 连接一个账号；失败时（如启动时网络还没好）按 30 秒、1 分钟、2 分钟……最长 10 分钟的间隔自动重试，
+   * AppID 或密钥错误时不重试
+   */
+  async connect(token, attempt = 0) {
+    const id = String(token).split(":")[0]
+    clearTimeout(reconnectTimers.get(id))
+    reconnectTimers.delete(id)
+    if (await connectBot(this, token)) return true
+
+    const err = Bot[id]?.loginError
+    if (isCredentialError(err)) {
+      Bot.makeLog("error", "AppID 或密钥错误，请检查 QQBot.yaml 后重启，不再自动重试", id)
+      return false
+    }
+    const delay = Math.min(RECONNECT_MIN * 2 ** attempt, RECONNECT_MAX)
+    Bot.makeLog("warn", `连接失败，${Math.round(delay / 1000)} 秒后重试`, id)
+    const timer = setTimeout(async () => {
+      reconnectTimers.delete(id)
+      try {
+        await Bot[id]?.sdk?.stop?.()
+      } catch {}
+      this.connect(token, attempt + 1).catch(err => Bot.makeLog("error", ["重试连接失败", err], id))
+    }, delay)
+    timer.unref?.()
+    reconnectTimers.set(id, timer)
+    return false
   }
 
   async load() {
     await loadMappingsFromFile()
     await loadGroupMappings()
     for (const token of config.token) {
-      await connectBot(this, token)
+      await this.connect(token)
       await Bot.sleep(500)
     }
   }
 })()
 Bot.adapter.push(adapter)
-await import("./app/bind.js")
-await import("./app/groupBind.js")
-await import("./app/autoUserBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
-export { WildSilencePlugin } from "./app/wildSilence.js"
-export { AutoGroupBindPlugin } from "./app/autoGroupBind.js"
-export { MessageFilterPlugin } from "./app/messageFilter.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))

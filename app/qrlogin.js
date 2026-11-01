@@ -12,7 +12,12 @@ import {
  * 自动调用 QQ 官方 API 获取 uin → 生成配置 → 写入配置文件
  *
  * 不限适配器，任何消息通道均可触发（但配置最终写入 QQBot 适配器）
+ * 配置写入后直接连接新账号，不用重启
  */
+
+/** 防止重复扫码：Yunzai 每条消息都会新建插件实例，标记要放在模块里 */
+let running = false
+
 export class QRLoginPlugin extends plugin {
   constructor() {
     super({
@@ -28,9 +33,6 @@ export class QRLoginPlugin extends plugin {
         },
       ],
     })
-
-    /** @type {boolean} 防止重复扫码流程 */
-    this._running = false
   }
 
   /**
@@ -38,12 +40,12 @@ export class QRLoginPlugin extends plugin {
    * @param {Object} e - 标准事件对象（参见 wiki 第四节）
    */
   async startLogin(e) {
-    if (this._running) {
+    if (running) {
       await e.reply("已有扫码流程正在进行中，请稍后重试")
       return true
     }
 
-    this._running = true
+    running = true
     try {
       await e.reply("正在生成扫码登录二维码，请稍候...")
 
@@ -71,27 +73,34 @@ export class QRLoginPlugin extends plugin {
       const { uin, appid, secret, username } = result
       const tokenString = generateTokenString(uin, appid, secret)
 
+      // 配置里有 secret，日志只记账号和 AppID
       Bot.makeLog?.(
         "info",
-        [`[扫码登录] 生成配置: ${tokenString}`],
+        [`[扫码登录] 生成配置: ${uin}:${appid}`],
         "QQBot-Plugin",
       )
 
       const saveResult = await saveBotToken(tokenString)
+      const head = [
+        `✅ 扫码登录成功！\n`,
+        `机器人：${username} (${uin})\n`,
+        `AppID：${appid}\n`,
+      ]
 
-      if (saveResult.added) {
-        await e.reply([
-          `✅ 扫码登录成功！\n`,
-          `机器人：${username} (${uin})\n`,
-          `AppID：${appid}\n`,
-          `配置已自动保存，重启后生效`,
-        ])
+      if (!saveResult.added) {
+        await e.reply([...head, `⚠️ ${saveResult.msg}`])
       } else {
+        // 直接连接新账号；连接失败时适配器会自动重试
+        const adapter = Bot.adapter?.find(a => a.id === "QQBot")
+        let connected = false
+        try {
+          connected = !!(await adapter?.connect(tokenString))
+        } catch (err) {
+          Bot.makeLog?.("error", ["[扫码登录] 连接新账号失败", err], "QQBot-Plugin")
+        }
         await e.reply([
-          `✅ 扫码登录成功！\n`,
-          `机器人：${username} (${uin})\n`,
-          `AppID：${appid}\n`,
-          `⚠️ ${saveResult.msg}，请重启后使用`,
+          ...head,
+          connected ? "配置已保存，机器人已上线" : "配置已保存，连接暂未成功，稍后会自动重试（也可以重启）",
         ])
       }
     } catch (err) {
@@ -102,7 +111,7 @@ export class QRLoginPlugin extends plugin {
       )
       await e.reply(`❌ 扫码登录失败：${err.message} 重新发送[#QQbot扫码登录]重试`)
     } finally {
-      this._running = false
+      running = false
     }
 
     return true
