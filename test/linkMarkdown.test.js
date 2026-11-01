@@ -36,10 +36,10 @@ test("网址在中文标点、空白、末尾英文标点处结束，多余的�
     "两个 [🔗 a.com](https://a.com) 和 [🔗 b.com](https://b.com/?q=1&x=2)")
 })
 
-test("IPv6 地址的网址：方括号属于网址，链接文字去掉方括号", () => {
-  assert.equal(linkifyText("面板 http://[fe80::1]:48370/api/x 打开"),
-    "面板 [🔗 fe80::1](http://[fe80::1]:48370/api/x) 打开")
-  assert.equal(linkifyText("https://[2406:da18::bad8]/"), "[🔗 2406:da18::bad8](https://[2406:da18::bad8]/)")
+test("IPv6 地址的网址 QQ 显示不成链接，保留原文；同一段里的其他网址照常转换", () => {
+  assert.equal(linkifyText("面板 http://[fe80::1]:48370/api/x 打开"), "面板 http://[fe80::1]:48370/api/x 打开")
+  assert.equal(linkifyText("v6 https://[2406:da18::bad8]/ v4 https://1.2.3.4/x", { escape: text => text.replace(/v/g, "V") }),
+    "V6 https://[2406:da18::bad8]/ V4 [🔗 1.2.3.4](https://1.2.3.4/x)")
 })
 
 test("已经是 Markdown 链接的不处理；没有网址时原样返回；其余文字交给 escape", () => {
