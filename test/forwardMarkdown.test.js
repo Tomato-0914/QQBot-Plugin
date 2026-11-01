@@ -58,7 +58,7 @@ test("消息数组里只替换可以转换的合并转发，其余消息段不�
   assert.equal(forwardToMarkdown("文字"), "文字")
 })
 
-test("有结构的消息：分段标题加粗，键值行变成列表，提示放进引用块，第一行做小标题", () => {
+test("有结构的消息：分段标题加粗，分段下的键值行变成列表，单独的键值行不做列表，提示放进引用块", () => {
   const forward = {
     type: "node",
     data: [
@@ -79,8 +79,7 @@ test("有结构的消息：分段标题加粗，键值行变成列表，提示�
     "- **网卡 eth0**：10.1.0.7",
     "- **网卡 eth1**：10.1.0.8",
     "",
-    "- **临时 token**：abc-123",
-    "",
+    "**临时 token**：abc-123",
     "一次性链接 300 秒内有效。",
     "> 如果自动登录失败，请手动粘贴 token。",
   ].join("\n"))
@@ -98,5 +97,5 @@ test("时间、网址里的冒号和已有的 Markdown 不当成键值；没有�
     "### 提醒\n> 会议 22:30 开始\n> https://a.com/x\n> - 已有列表：不动\n> # 已有标题")
 
   const mixed = { type: "node", data: [{ message: "状态：正常\n- 已有列表：不动\n**加粗**：不动" }] }
-  assert.equal(forwardToMarkdown(mixed).data, "- **状态**：正常\n- 已有列表：不动\n\n**加粗**：不动")
+  assert.equal(forwardToMarkdown(mixed).data, "**状态**：正常\n- 已有列表：不动\n\n**加粗**：不动")
 })
