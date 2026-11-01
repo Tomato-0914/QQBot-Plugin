@@ -306,8 +306,8 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 - `e.approve(true)` 同意，`e.approve(false, 理由, true)` 拒绝并加入群黑名单
 - `e.reply(msg)` 在群里发主动消息（入群申请不支持被动回复）
 
-本插件只负责把申请转成事件，不发提醒；入群申请提醒（带同意 / 拒绝按钮）由 Cheshire-Plugin 提供，
-ChatGPT-Plugin 的 `join_request` 工具可以查看、同意、拒绝。
+本插件只负责把申请转成事件，不发提醒；需要入群申请提醒（如带同意 / 拒绝按钮的消息）时，
+可以在其他插件里监听 `request.group.add` 事件实现。ChatGPT-Plugin 的 `join_request` 工具可以查看、同意、拒绝。
 
 群对象也可以主动查询和处理：
 
