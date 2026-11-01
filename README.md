@@ -20,7 +20,7 @@
 
 - 接入 QQ 官方 Bot 私聊、群聊、频道消息事件
 - 支持 Yunzai 常用消息段到 QQBot 消息的转换
-- 支持文本、图片、Markdown、按钮等消息发送
+- 支持文本、图片、Markdown、按钮等消息发送，文字里的网址自动转成 Markdown 链接
 - 支持 C2C 私聊文本与 Markdown 流式发送
 - 支持 `openid` 与真实 QQ 号的绑定映射
 - 支持 QQBot 群 `openid` 与真实群号的绑定映射
@@ -71,6 +71,8 @@ markdownImage: false
 forceVerifyImageResource: false
 messageRetentionDays: 7
 forwardMarkdown: true
+linkMarkdown: true
+linkMarkdownText: 🔗 {host}
 inputNotify: true
 filterBotMsg: false
 filterOnlyAtOtherBot: false
@@ -91,6 +93,8 @@ token: []
 | `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
 | `forwardMarkdown` | `true` | 群聊和 C2C 私聊中只有文字的合并转发转成一条 Markdown 发送，见「合并转发」 |
+| `linkMarkdown` | `true` | 群聊和 C2C 私聊中文字里的网址转成 Markdown 链接 `[链接文字](网址)`，见「网址转链接」 |
+| `linkMarkdownText` | `🔗 {host}` | 网址转链接时的链接文字，`{host}` 换成网址的域名；也可以写成固定文字，如 `点击跳转` |
 | `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
 | `filterBotMsg` | `false` | 丢弃其他机器人发的消息，避免多个机器人互相触发 |
 | `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息 |
@@ -117,6 +121,21 @@ token: []
 
 官方 Markdown 不支持 HTML 折叠块 `<details><summary>标题</summary>内容</details>`，带有它的消息会发送失败。
 群聊和私聊发送前会把折叠块展开成普通 Markdown：标题加粗单独一行，内容照常显示；代码块、行内代码里的不处理。
+
+### 网址转链接
+
+群聊和 C2C 私聊里，文字中的网址会转成 Markdown 链接，默认显示为 `🔗 域名`：
+
+```text
+视频：https://www.bilibili.com/video/BV1xx 快看
+→ 视频：[🔗 bilibili.com](https://www.bilibili.com/video/BV1xx) 快看
+```
+
+- 链接文字由 `linkMarkdownText` 决定，`{host}` 换成域名（去掉 `www.`）；写成 `点击跳转` 则所有链接都显示「点击跳转」
+- 网址在空白、中文标点处结束，末尾的英文句号、逗号等和多出来的右括号算作正文
+- 已经写成 `[文字](网址)`、`<网址>` 的不处理；`segment.markdown` 手写的 Markdown 不处理
+- 纯文字合并转发转成 Markdown 时，文字里的网址同样转换
+- `linkMarkdown: false` 关闭，网址按原样发送
 
 ### Markdown 图片素材
 
@@ -365,6 +384,7 @@ QQBot-Plugin
 │   ├── messageStore.js    # 聊天记录 JSONL 持久化与查询
 │   ├── segments.js        # 扩展消息段构造器
 │   ├── forwardMarkdown.js # 纯文字合并转发转 Markdown
+│   ├── linkMarkdown.js    # 文字里的网址转 Markdown 链接
 │   ├── musicMarkdown.js   # 音乐卡片转 Markdown 链接
 │   ├── unsupportedSegments.js # 发不了的卡片等消息段转换
 │   ├── groupMap.js        # 群 openid 与真实群号映射
