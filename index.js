@@ -1,6 +1,6 @@
 logger.info(logger.yellow("- 正在加载 QQBot 适配器插件"))
 // 动态导入子模块（避免子目录 .js 被 CJS 解析）
-const { config } = await import("./lib/config.js")
+const { config, configSave } = await import("./lib/config.js")
 const { Converter } = await import("./lib/converter.js")
 const { connectBot, joinRequestComment } = await import("./lib/client.js")
 const { getAppid, getMappedUin, isQQUin, loadMappingsFromFile, translateToOpenid } = await import("./lib/uinMap.js")
@@ -25,6 +25,8 @@ const adapter = new (class QQBotAdapter {
     if (process.platform === "win32") this.sep = ""
     this.converter = new Converter(this)
     this.config = config
+    /** 保存 QQBot.yaml，其他插件修改 adapter.config 后调用 */
+    this.saveConfig = configSave
     installMessageSender(this)
     installExtensions(this)
   }
@@ -358,8 +360,5 @@ const adapter = new (class QQBotAdapter {
   }
 })()
 Bot.adapter.push(adapter)
-await import("./app/bind.js")
-await import("./app/groupBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
-export { MessageFilterPlugin } from "./app/messageFilter.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))

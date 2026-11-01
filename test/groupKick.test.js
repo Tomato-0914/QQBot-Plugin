@@ -29,7 +29,7 @@ global.Bot = Object.assign(Object.create(null), {
   getMap: async () => new Map(),
   makeLog () {},
 })
-mock.module(new URL("../lib/config.js", import.meta.url).href, { namedExports: { config: { bot: {} } } })
+mock.module(new URL("../lib/config.js", import.meta.url).href, { namedExports: { config: { bot: {} }, configSave: async () => {} } })
 mock.module(new URL("../lib/converter.js", import.meta.url).href, { namedExports: { Converter: class {} } })
 mock.module(new URL("../lib/client.js", import.meta.url).href, {
   namedExports: { connectBot: async () => true, joinRequestComment: info => info?.verify_message || "" },
@@ -51,10 +51,9 @@ mock.module(new URL("../lib/groupMap.js", import.meta.url).href, {
 })
 mock.module(new URL("../lib/messageSender.js", import.meta.url).href, { namedExports: { installMessageSender () {} } })
 mock.module(new URL("../lib/messageStore.js", import.meta.url).href, { namedExports: { getRecordByMsgId: async () => undefined } })
-for (const app of ["qrlogin", "groupBind", "bind", "messageFilter"])
-  mock.module(new URL(`../app/${app}.js`, import.meta.url).href, {
-    namedExports: { QRLoginPlugin: class {}, MessageFilterPlugin: class {} },
-  })
+mock.module(new URL("../app/qrlogin.js", import.meta.url).href, {
+  namedExports: { QRLoginPlugin: class {} },
+})
 
 await import("../index.js")
 const adapter = Bot.adapter.at(-1)
