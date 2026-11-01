@@ -42,6 +42,15 @@ test("IPv6 地址的网址 QQ 显示不成链接，保留原文；同一段里�
     "V6 https://[2406:da18::bad8]/ V4 [🔗 1.2.3.4](https://1.2.3.4/x)")
 })
 
+test("ipv6: \"code\" 时 IPv6 网址单独放进代码块，前后文字各自换行", () => {
+  const code = "```\nhttp://[fe80::1]:48370/x\n```"
+  assert.equal(linkifyText("面板 http://[fe80::1]:48370/x 打开", { ipv6: "code" }), `面板\n${code}\n打开`)
+  assert.equal(linkifyText("http://[fe80::1]:48370/x", { ipv6: "code" }), code)
+  assert.equal(linkifyText("a\nhttp://[fe80::1]:48370/x\nb", { ipv6: "code" }), `a\n${code}\nb`)
+  assert.equal(linkifyText("v4 https://1.2.3.4/x v6 http://[fe80::1]:48370/x", { ipv6: "code" }),
+    `v4 [🔗 1.2.3.4](https://1.2.3.4/x) v6\n${code}`)
+})
+
 test("已经是 Markdown 链接的不处理；没有网址时原样返回；其余文字交给 escape", () => {
   const md = "[文档](https://a.com/doc) 和 <https://b.com> 和 [https://c.com](https://c.com)"
   assert.equal(linkifyText(md), md)
@@ -59,6 +68,10 @@ test("发送时文字段的网址转成链接，网址里的 @ 不被转义；li
   const off = new Converter({ sep: ":", config: { linkMarkdown: false } })
   const [[plain]] = await off.makeRawMarkdownMsg(data, "看 https://a.com")
   assert.equal(plain.data.content, "看 https://a.com")
+
+  // IPv6 网址放进代码块
+  const [[v6]] = await converter.makeRawMarkdownMsg(data, "面板 http://[fe80::1]:48370/x")
+  assert.equal(v6.data.content, "面板\n```\nhttp://[fe80::1]:48370/x\n```")
 
   // 手写的 Markdown 段不处理
   const [[raw]] = await converter.makeRawMarkdownMsg(data, { type: "markdown", data: "原样 https://a.com" })

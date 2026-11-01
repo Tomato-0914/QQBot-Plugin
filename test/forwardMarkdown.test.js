@@ -99,3 +99,34 @@ test("时间、网址里的冒号和已有的 Markdown 不当成键值；没有�
   const mixed = { type: "node", data: [{ message: "状态：正常\n- 已有列表：不动\n**加粗**：不动" }] }
   assert.equal(forwardToMarkdown(mixed).data, "**状态**：正常\n- 已有列表：不动\n\n**加粗**：不动")
 })
+
+test("值是 IPv6 网址时放进代码块；已有代码块里的内容原样保留", () => {
+  const forward = {
+    type: "node",
+    data: [
+      { message: "外网地址：\n公网 IPv4：1.2.3.4\n公网 IPv6：http://[2406::1]:8080/x" },
+      { message: "配置：如下\n```\nkey: value\n如果: 不动\n```\n备注：完" },
+      { message: "http://[fe80::1]/y\n说明：单独一行" },
+    ],
+  }
+  assert.equal(forwardToMarkdown(forward).data, [
+    "**外网地址**",
+    "- **公网 IPv4**：1.2.3.4",
+    "- **公网 IPv6**：",
+    "```",
+    "http://[2406::1]:8080/x",
+    "```",
+    "",
+    "**配置**：如下",
+    "```",
+    "key: value",
+    "如果: 不动",
+    "```",
+    "**备注**：完",
+    "",
+    "```",
+    "http://[fe80::1]/y",
+    "```",
+    "**说明**：单独一行",
+  ].join("\n"))
+})
