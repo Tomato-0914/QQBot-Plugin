@@ -9,6 +9,7 @@ const {
   translateGroupToOpenid,
 } = await import("./lib/groupMap.js")
 const { installMessageSender } = await import("./lib/messageSender.js")
+const { installExtensions } = await import("./lib/extensions.js")
 const { getRecordByMsgId, listRecentRecords } = await import("./lib/messageStore.js")
 const { installSegments } = await import("./lib/segments.js")
 installSegments()
@@ -25,6 +26,7 @@ const adapter = new (class QQBotAdapter {
     this.converter = new Converter(this)
     this.config = config
     installMessageSender(this)
+    installExtensions(this)
   }
 
   getFriendMap(id) {
@@ -358,9 +360,6 @@ const adapter = new (class QQBotAdapter {
 Bot.adapter.push(adapter)
 await import("./app/bind.js")
 await import("./app/groupBind.js")
-await import("./app/autoUserBind.js")
 export { QRLoginPlugin } from "./app/qrlogin.js"
-export { WildSilencePlugin } from "./app/wildSilence.js"
-export { AutoGroupBindPlugin } from "./app/autoGroupBind.js"
 export { MessageFilterPlugin } from "./app/messageFilter.js"
 logger.info(logger.green("- QQBot 适配器插件 加载完成"))

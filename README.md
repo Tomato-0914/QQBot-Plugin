@@ -69,7 +69,7 @@ imageLength: 10
 markdownImage: false
 forceVerifyImageResource: false
 messageRetentionDays: 7
-autoBindUser: true
+forwardMarkdown: true
 inputNotify: true
 filterBotMsg: false
 filterOnlyAtOtherBot: false
@@ -90,7 +90,7 @@ token: []
 | `markdownImage` | `false` | 是否将群聊和 C2C 私聊中的普通图片消息段上传为官方素材并转换成 Markdown 图片；默认仍以原生图片发送 |
 | `forceVerifyImageResource` | `false` | 是否为群聊和 C2C 私聊 Markdown 开启图片资源转存校验。开启后，图片转存失败会中断发送并记录错误，不自动重试。频道消息不受影响 |
 | `messageRetentionDays` | `7` | 群聊和 C2C 私聊的 JSONL 聊天记录保留天数。设置为 `0` 时永久保留，不自动删除 |
-| `autoBindUser` | `true` | 官方机器人和野生号同群时，根据群友的聊天消息自动完成 QQ 绑定，无需发送 `#QQ绑定`，见下方「自动 QQ 绑定」 |
+| `forwardMarkdown` | `true` | 群聊和 C2C 私聊中只有文字的合并转发转成一条 Markdown 发送，见「合并转发」 |
 | `inputNotify` | `true` | 收到 C2C 私聊消息时显示“对方正在输入”（30 秒，机器人回复后自动结束）；插件也可以调用 `e.sendInputNotify(秒数)` 手动显示 |
 | `filterBotMsg` | `false` | 丢弃其他机器人发的消息，命令 `#QQBot开启bot消息过滤` 切换 |
 | `filterOnlyAtOtherBot` | `false` | 丢弃只 @ 了其他机器人、没有 @ 本机器人的群消息，命令 `#QQBot开启纯at其他bot过滤` 切换 |
@@ -339,23 +339,32 @@ ChatGPT-Plugin 的 `join_request` 工具可以查看、同意、拒绝。
 ```text
 QQBot-Plugin
 ├── app
-│   ├── bind.js        # 用户 QQ 号绑定命令
-│   ├── groupBind.js   # 群号绑定命令
-│   └── qrlogin.js     # 扫码登录命令
+│   ├── bind.js            # 用户 QQ 号绑定命令
+│   ├── groupBind.js       # 群号绑定命令
+│   ├── messageFilter.js   # 消息过滤开关命令
+│   └── qrlogin.js         # 扫码登录命令
 ├── lib
-│   ├── client.js      # QQBot 连接与事件转发
-│   ├── config.js      # 配置加载与保存
-│   ├── converter.js   # 消息段转换
-│   ├── groupMap.js    # 群 openid 与真实群号映射
+│   ├── client.js          # QQBot 连接与事件转发（消息、通知、入群申请、按钮回调）
+│   ├── config.js          # 配置加载与保存
+│   ├── converter.js       # 消息段转换
+│   ├── extensions.js      # 扩展接口（adapter.use / adapter.mapping）
+│   ├── messageBuilder.js  # 收到的消息转成 Yunzai 事件
+│   ├── messageSender.js   # 发送、被动转主动、撤回
+│   ├── messageStore.js    # 聊天记录 JSONL 持久化与查询
+│   ├── segments.js        # 扩展消息段构造器
+│   ├── forwardMarkdown.js # 纯文字合并转发转 Markdown
+│   ├── musicMarkdown.js   # 音乐卡片转 Markdown 链接
+│   ├── groupMap.js        # 群 openid 与真实群号映射
+│   ├── uinMap.js          # 用户 openid 与真实 QQ 号映射
+│   ├── avatarVerify.js    # 绑定时的头像校验
 │   ├── modules
 │   │   └── qq-official-bot  # 内置 QQBot SDK 运行产物
-│   ├── qrlogin.js     # 扫码登录实现
-│   ├── uinMap.js      # 用户 openid 与真实 QQ 号映射
-│   └── utils.js       # 通用工具函数
-├── index.js           # 适配器入口
-├── package.json       # 依赖信息
-├── README.md          # 项目说明
-└── wiki.md            # 消息组件示例文档
+│   └── ...                # 素材、文件缓存、Markdown 兼容等工具
+├── test                   # node --test 测试（mock SDK，不连接 QQ）
+├── index.js               # 适配器入口
+├── package.json           # 依赖信息
+├── README.md              # 项目说明
+└── wiki.md                # 消息组件示例文档
 ```
 
 ## 消息组件
@@ -498,6 +507,46 @@ Redis／内存消息缓存。
 node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
 ```
 
+## 合并转发
+
+官方机器人发不了合并转发。群聊和私聊中只有文字的合并转发（如 AI 的思考过程、各种列表）会转成一条
+Markdown：标题加粗，每个节点一段引用块。带图片、文件等内容或超过 3000 字的合并转发不转换，
+仍按普通消息拆开发送。`forwardMarkdown: false` 可关闭。
+
+音乐卡片同样发不了，会改发一条 Markdown 链接 `🎵 歌名 - 歌手`，点开是歌曲页面。
+
+## 扩展接口
+
+适配器只负责连接 QQBot 和消息的收发、转换。其他插件需要介入发送流程，或给好友、群对象补充方法时，
+通过扩展接口挂接，不要直接改写适配器的方法：
+
+```js
+const adapter = Bot.adapter.find(a => a.id === "QQBot")
+
+adapter.use("我的扩展", {
+  // 群聊 / 私聊发送前调用，scope 为 "group" 或 "friend"
+  // 收到的 msg 已经过合并转发转换；next(data, msg) 交给下一个扩展，最后由适配器发送
+  async send (scope, data, msg, next) {
+    return next(data, msg)
+  },
+  // pickFriend / pickMember / pickGroup 返回对象前调用，kind 为 "friend" / "member" / "group"
+  // ctx 为 { self_id, group_id, user_id }，返回（可以是修改后的）对象
+  pick (kind, obj, ctx) {
+    return obj
+  },
+})
+
+adapter.unuse("我的扩展")
+```
+
+同名扩展重复注册时替换旧的，插件热重载不会叠加；`adapter.use()` 的返回值也可以用来移除扩展。
+
+`adapter.mapping` 提供绑定查询与保存：`getAppid`、`getMappedUin`、`getMappedOpenid`、`saveMapping`、
+`translateToOpenid`、`getGroupUin`、`translateGroupToOpenid`、`saveGroupMapping`、`checkAvatar`（头像校验）等。
+
+和野生号（OneBotv11 / ICQQ）共存的功能（野生号静默、野生号辅助、一键群绑定、自动 QQ 绑定）
+已移到 Cheshire-Plugin，通过上面的扩展接口挂接；配置文件仍是 `data/wild-silence.json`。
+
 ## 已知限制
 
 
@@ -509,53 +558,3 @@ node --experimental-test-module-mocks --test test/sdkHostErrors.test.js
 ## 免责声明
 
 本项目为基于原项目拆分后的二改版本，仅供学习交流和自用参考。使用 QQ 官方机器人能力时，请遵守 QQ 开放平台相关规则与协议。因使用本插件造成的问题需由使用者自行承担。
-
-## 野生号静默 / 一键群绑定（Tomato 自用）
-
-和野生号（OneBotv11 / ICQQ）同群共存时使用。配置保存在 `data/wild-silence.json`。
-
-| 命令（主人） | 作用 |
-|---|---|
-| `#一键群绑定` | 在官方机器人所在、尚未绑定的群里自动完成 `#群绑定`（建议私聊野生号发送） |
-| `#一键群绑定全部` | 已绑定的群也重新绑定一遍 |
-| `#野生静默开启` / `#野生静默开启群号` | 该群野生号不再处理消息、不再主动发言 |
-| `#野生静默关闭` / `#野生静默关闭群号` | 取消静默 |
-| `#野生静默总开关开启` / `关闭` | 总开关 |
-| `#野生静默定时官方` / `野生` / `不发` | 静默群里野生号的定时 / 主动消息：改由官方机器人发（失败时野生号照发）/ 野生号照发 / 丢弃 |
-| `#野生静默状态` | 查看配置，并显示每个静默群里官方机器人的主动消息开关 |
-
-`#一键群绑定` 需要发给野生号。`#野生静默…` 系列命令优先由野生号处理；在静默群、私聊官方机器人或没有野生号的群里，改由官方机器人处理（官方机器人需已完成群绑定才能识别群号）。
-
-`wild-silence.json` 里的 `wild`（野生号列表）和 `official`（官方机器人 QQ）留空时自动识别。
-
-### 自动 QQ 绑定
-
-官方机器人和野生号在同一个群时，群友正常聊天即可自动完成 `#QQ绑定`，不需要群友手动操作。需要：官方机器人在该群开启「获取全部消息」、该群已完成群绑定、野生号也在群里。
-
-两边收到的消息 ID 不通用，按「同一个群 + 同样的文字 + 时间相近」对应：
-
-- 前后 15 秒内，同一段文字在官方机器人这边只有一个未绑定的 openid 发过、在野生号这边只有一个 QQ 号发过，才算一次匹配；多人同时发相同内容时放弃，少于 2 个字或没有文字的消息不参与。
-- 匹配后做与 `#QQ绑定` 相同的头像校验，通过才保存。QQ 号用默认头像时，需要两段不同的文字都对上同一对才保存。
-- 同一个 openid 对上过不同的 QQ 号、或 QQ 号已绑定给其他 openid 时视为冲突，不再自动绑定，请改用 `#QQ绑定`。
-
-绑定成功只在日志中记录 `QQBot 自动绑定成功：openid → QQ号`，不会在群里发消息。配置 `autoBindUser: false` 可关闭。
-
-### 野生号辅助
-
-野生号平时静默，只在官方机器人发不了、做不到的时候代办。不限静默群，野生号在群里（私聊时野生号与对方是好友）就会辅助；`wild-silence.json` 中 `assist: false` 可关闭。需要先完成群绑定和 QQ 绑定（可自动完成，见下方「自动 QQ 绑定」）。
-
-- **发不了的内容**：json / xml / music 卡片、合并转发、戳一戳改由野生号发送，其余内容仍由官方机器人发送；野生号发送失败时交回官方机器人（合并转发会被拍平成普通消息）。文件官方机器人能发，由官方机器人发送（好友、群对象的 `sendFile` 同样以文件消息发送），失败时才交给野生号。
-- **纯文字的合并转发**：只有文字的合并转发（如 AI 的思考过程、各种列表）由官方机器人转成一条 Markdown 发送，标题加粗、每个节点一段引用块，不交给野生号；没有野生号时也一样。带图片、文件等内容或超过 3000 字的合并转发仍按上一条处理。`wild-silence.json` 中 `forwardMarkdown: false` 可关闭。
-- **音乐卡片兜底**：音乐卡片没能由野生号发出（群里没有野生号、野生号发送失败）时，官方机器人改发一条 Markdown 链接 `🎵 歌名 - 歌手`，点开是歌曲页面，不会把卡片当成一段 JSON 文字发出去。
-- **整条发送失败**：官方机器人整条消息发送失败（被动回复过期、主动消息额度用完、群里关闭了主动消息等）时，改由野生号发送；按钮、引用等官方机器人专用的部分会去掉，Markdown 按文字发送。
-- **没有的功能**：插件调用官方机器人没有的方法时，交给野生号执行，结果仍由插件通过官方机器人回复。例如椰奶的好友点赞：野生号点赞，官方机器人回复点赞结果。
-
-| 对象 | 交给野生号的方法 |
-| --- | --- |
-| 好友 | `thumbUp`（点赞）、`sendForwardMsg`、`getInfo` |
-| 群成员 | `getInfo`（群名片、等级、入群时间等）、`poke`；好友的方法同样可用 |
-| 群 | `sendForwardMsg`、`getMemberList` / `getMemberArray` / `getMemberMap`、`getHonorInfo`、`getEssence`、`pokeMember`、`setCard`、`setTitle`、`setAdmin`、`setName`、`sign`、`muteAll` |
-
-官方机器人自己有的方法不受影响；`getMemberMap` 例外，官方机器人只有见过的成员，优先取野生号的完整列表，野生号不可用时用回官方机器人的。改名片、设头衔、全员禁言等需要野生号本身有对应的群权限。
-
-静默群里收到的卡片消息（如 B 站、抖音的分享卡片）由野生号解析：QQ 下发给官方机器人的小程序卡片只有标题和封面，没有跳转链接，视频解析等插件拿不到地址。野生号解析出的结果不看定时消息配置，始终先交给官方机器人发送，失败时由野生号发送；官方机器人收到的同一张卡片会跳过。野生号不在的群里，官方机器人无法解析卡片。
