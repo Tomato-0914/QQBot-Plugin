@@ -59,3 +59,23 @@ test("私聊：好友发的消息同样跳过；单个 message_id 也能处理",
   assert.deepEqual(sdkCalls, [["friend", "openid-20001", "bot-msg"]])
   assert.deepEqual(marked, [["bot-msg", { userOpenId: "openid-20001" }]])
 })
+
+test("撤回失败：用 warn 记下错误原因，返回 false，不标记已撤回", async () => {
+  sdkCalls.length = 0
+  marked.length = 0
+  logs.length = 0
+  const failing = {
+    sdk: {
+      recallGroupMessage: async () => {
+        throw new Error('Request "/v2/groups/g/messages/m" failed with code(40034006): 消息超过撤回时限')
+      },
+    },
+  }
+  const rets = await adapter.recallGroupMsg({ self_id: "official", bot: failing, group_id: "123456" }, "old-bot-msg")
+  assert.deepEqual(rets, [false])
+  assert.deepEqual(marked, [])
+  const warn = logs.find(([level, msg]) => level === "warn" && Array.isArray(msg) && msg[0] === "撤回消息错误")
+  assert.ok(warn)
+  assert.equal(warn[1][1], "old-bot-msg")
+  assert.match(warn[1][2], /40034006/)
+})
