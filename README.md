@@ -307,9 +307,11 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 插件不依赖这两个接口，直接使用群消息事件中的 `author` 字段：
 
 - `author.username` 封装为 `sender.nickname`
+- `author.member_nickname` 封装为 `sender.card`，并用于群成员缓存及历史消息查询
 - `author.member_role` 同步为 `role`、`member_role`、`is_owner` 和 `is_admin`
 - `author.bot` 和 `author.union_openid` 直接保留到 `sender`
-- 事件未提供 `sender.card`、`joined_at` 或 `join_time` 时，插件不会自行补造
+
+好友私聊消息的 `sender.nickname` 同样取自该条事件的 `author.username`。
 
 已开通内邀权限的机器人可以通过内置 SDK 直接调用
 `Bot[id].sdk.getGroupMemberList(groupOpenid)`（自动翻页）和
