@@ -238,8 +238,8 @@ token:
 | `#QQ强制绑定@某人 123456789` | `master` | 跳过头像校验，直接为被 @ 用户绑定 |
 | `#QQ绑定openid <openid> 123456789` | `master` | 校验指定 `openid` 的头像后直接绑定 |
 | `#QQ强制绑定openid <openid> 123456789` | `master` | 跳过头像校验，直接绑定指定 `openid` |
-| `#群绑定` | `master` | 查看当前群绑定状态或绑定提示 |
-| `#群绑定123456789` | `master` | 将当前 QQBot 群 `openid` 绑定到真实群号 |
+| `#群绑定` | `master`、群主或群管理员 | 查看当前群绑定状态或绑定提示 |
+| `#群绑定123456789` | `master`、群主或群管理员 | 将当前 QQBot 群 `openid` 绑定到真实群号 |
 
 消息过滤开关 `filterBotMsg`、`filterOnlyAtOtherBot` 直接修改 `QQBot.yaml`，见「配置项说明」。
 
@@ -293,13 +293,15 @@ QQ 官方 Bot 事件中通常拿到的是 `openid`，不是传统 QQ 号或群�
 
 ### 群绑定
 
-群内 `master` 发送：
+群内 `master`、群主或群管理员发送：
 
 ```text
 #群绑定123456789
 ```
 
 绑定成功后，当前 QQBot 群 `openid` 会映射为真实群号。
+
+群主和群管理员根据当前群消息中的角色识别，无需先完成个人 QQ 绑定；也可发送 `#群绑定` 查看状态，或再次发送绑定命令更换群号。普通成员无权操作。
 
 ## 群成员信息
 
@@ -367,6 +369,27 @@ QQ 官方的群成员列表与成员详情接口目前仅向内邀机器人开�
 - 踢人时拉黑：`kickMember(user_id, true)`；拒绝入群申请时拉黑：`e.approve(false, 理由, true)`
 
 插件内置经过验证的维护版 `qq-official-bot` SDK 运行快照，不再从远程仓库安装 SDK 本体。
+
+### 踢出群成员
+
+```js
+const group = Bot[e.self_id].pickGroup(e.group_id)
+await group.kickMember(user_id) // 成功返回 true
+await group.kickMember([user_id_1, user_id_2]) // 单次最多 20 人
+await group.kickMember(user_id, true) // 踢出并加入群黑名单
+await group.pickMember(user_id).kick() // 也可以 kick(true) 或 icqq 写法 kick(消息, true)
+```
+
+沿用 Yunzai 框架的 `group.kickMember(id, block)` 和 `member.kick()` 接口，
+自动复用群号、QQ 号到 OpenID 的映射，优先使用缓存中的原始 OpenID。
+空列表、超过 20 人或非法成员参数会报错，不自动拆批或重试；开放平台没有返回成功时抛出原因，
+未开通踢人接口（错误码 11253，需向 QQ 开放平台申请内邀）时给出明确提示，其他官方请求错误直接抛出。
+群主和机器人 WEB 管理端都需要开启“移除群成员”开关，接口限频为 30 QPM。
+
+`member.getInfo()` 只返回已有的群成员缓存；没有缓存就返回 `undefined`，
+由调用方按自身逻辑处理信息缺失，不新增群成员查询，也不默认授予或推断身份。
+使用真实群号、QQ 号时，需要配置对应的映射；直接传入 OpenID 时无需映射。
+`kickMember(id, true)` / `member.kick(true)` 会在移出的同时加入群黑名单（`add_to_member_blacklist`）。
 
 
 ## 目录结构

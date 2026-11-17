@@ -186,11 +186,16 @@ const adapter = new (class QQBotAdapter {
     return {
       ...this.pickFriend(id, user_id),
       ...i,
+      /** 仅暴露真实群成员缓存；未缓存的成员保持信息缺失。 */
+      getInfo: async () => Bot[id].gml.get(group_id)?.get(user_id),
       getAvatarUrl: size => this.pickFriend(id, i._raw_user_id || user_id).getAvatarUrl(size),
       /** 按 Yunzai 成员对象约定禁言当前成员 */
       mute: seconds => this.pickGroup(id, group_id).muteMember(user_id, seconds),
-      /** 按 icqq 成员对象约定移出当前成员，block 为 true 时同时加入群黑名单 */
-      kick: (_message, block = false) => this.pickGroup(id, group_id).kickMember(user_id, block),
+      /**
+       * 移出当前成员，兼容两种写法：kick(block)（Yunzai）与 kick(message, block)（icqq）；
+       * block 为 true 时同时加入群黑名单
+       */
+      kick: (...args) => this.pickGroup(id, group_id).kickMember(user_id, typeof args[0] === "boolean" ? args[0] : args[1] === true),
     }
   }
 
@@ -250,13 +255,29 @@ const adapter = new (class QQBotAdapter {
           mute_expire_at: new Date(Date.now() + duration * 1000).toISOString(),
         }])
       },
-      /** 移出群成员，reject_add 为 true 时同时加入群黑名单禁止再次加群 */
+      /**
+       * 移出群成员（Yunzai / icqq 约定）：user_id 为单个成员，或最多 20 个成员的数组；
+       * reject_add（block）为 true 时同时加入群黑名单，禁止再次加群。成功返回 true，失败抛出原因
+       */
       kickMember: async (user_id, reject_add = false) => {
-        const groupOpenid = await translateGroupToOpenid(i.bot, i.group_id) || i._raw_group_id || i.group_id
-        const memberOpenid = await translateToOpenid(i.bot, String(user_id))
+        const userIds = Array.isArray(user_id) ? user_id : [user_id]
+        if (userIds.length < 1 || userIds.length > 20)
+          throw new RangeError("单次踢人必须指定 1 至 20 个成员")
+        const memberOpenids = []
+        for (const userId of userIds) {
+          if (!(typeof userId === "string" && userId.trim()) &&
+              !(typeof userId === "number" && Number.isSafeInteger(userId) && userId > 0))
+            throw new TypeError("成员 ID 必须是非空字符串或有效的 QQ 号")
+          if (String(userId).startsWith("qg_"))
+            throw new TypeError("QQBot 群成员移除接口不支持频道成员 ID")
+          // 优先用群成员缓存里的 OpenID，没有时按绑定关系把 QQ 号换成 OpenID
+          const member = this.pickMember(id, group_id, userId)
+          memberOpenids.push(member._raw_user_id || await translateToOpenid(i.bot, String(member.user_id)))
+        }
+        const groupOpenid = i._raw_group_id || await translateGroupToOpenid(i.bot, i.group_id) || i.group_id
         let result
         try {
-          result = await i.bot.sdk.removeGroupMembers(groupOpenid, [memberOpenid], reject_add === true)
+          result = await i.bot.sdk.removeGroupMembers(groupOpenid, memberOpenids, reject_add === true)
         } catch (err) {
           // 批量移出成员接口内邀接入，未开通的机器人统一返回 11253
           if (err?.code === 11253 || err?.err_code === 11253)
