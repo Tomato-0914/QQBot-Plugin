@@ -105,3 +105,19 @@ await test("普通消息、频道消息忽略气泡按钮和 small，不会变�
   const plain = await converter.makeMsg(data, ["你好", segments.bubble({ text: "签到", input: "#签到" }), segments.small()])
   assert.deepEqual(plain.flat().filter(i => i.type !== "reply").map(i => i.type), ["text"])
 })
+
+await test("回调按钮把 callback 写进 action.data，映射过期后点击仍能按 button_data 处理", async t => {
+  // 回调映射 5 分钟后清理，用假计时器避免测试进程等待
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const bot = { info: { appid: "appid" }, callback: {} }
+  const button = await converter.makeButton({ ...data, bot, message_id: "m1" }, { text: "第 2 张", callback: "#钟离攻略2" }, 0)
+  assert.equal(button.action.type, 1)
+  assert.equal(button.action.data, "#钟离攻略2")
+  assert.equal(bot.callback[button.id].message, "#钟离攻略2")
+  t.mock.timers.tick(300000)
+  assert.equal(bot.callback[button.id], undefined)
+  assert.equal(button.action.data, "#钟离攻略2")
+
+  const custom = await converter.makeButton({ ...data, bot }, { text: "x", callback: "#a", QQBot: { action: { data: "#b" } } }, 0)
+  assert.equal(custom.action.data, "#b")
+})
