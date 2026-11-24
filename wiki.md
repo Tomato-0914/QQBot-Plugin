@@ -76,6 +76,8 @@ await e.reply(segment.button(
 
 点击后会把 `callback` 的内容交给机器人处理。
 
+`callback` 的内容同时写在按钮里（`action.data`）。点击后的 5 分钟内会带上原消息的引用一起处理；超过 5 分钟或机器人重启后，按钮仍然可以点，只是不再带引用。
+
 #### input 输入按钮
 
 ```js
